@@ -3,6 +3,11 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
+.venv/
+.tools/
+.uv-cache/
+.mplconfig/
+output/
 
 # IDE
 .vscode/
