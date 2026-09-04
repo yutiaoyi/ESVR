@@ -10,7 +10,7 @@ DATASET_CONFIGS = {
     },
     "breast": {
         "training_mode": "full",
-        "path": "/home/Alexandrite/yjkim/repos/gaussian-splatting-smin/data/vis/breast_448x448x160_uint8.tif",
+        "path": "./data/public/breast_448x448x160_uint8.tif",
         "x_voxel_size": 448,
         "y_voxel_size": 448,
         "z_voxel_size": 160,

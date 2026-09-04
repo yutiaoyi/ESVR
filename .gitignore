@@ -8,6 +8,7 @@ __pycache__/
 .uv-cache/
 .mplconfig/
 output/
+data/public/
 
 # IDE
 .vscode/
