@@ -7,7 +7,11 @@ __pycache__/
 .tools/
 .uv-cache/
 .mplconfig/
-output/
+# Track experiment reports only; keep models, volumes, images and logs ignored.
+/output/**
+!/output/**/
+!/output/**/RESULTS.md
+!/output/**/TF_PROTOCOL.md
 data/public/
 data/xueliao_data/
 data/xueliao_timevaryingdata/

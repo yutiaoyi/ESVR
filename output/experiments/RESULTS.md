@@ -1,5 +1,8 @@
 # ESVR Reproduction Results
 
+This historical report covers multiple static runs under `output/experiments/`
+and the earlier `output/aneurysm/` baseline. Paths in the text are repo-relative.
+
 Paper: [arXiv:2608.05564](https://arxiv.org/abs/2608.05564)
 
 ## Environment

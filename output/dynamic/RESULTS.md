@@ -2,7 +2,7 @@
 
 Historical initial-integration checks below. The user has subsequently supplied
 90 real frames; the completed full run is documented in
-[VORTS90_DYNAMIC_RESULTS.md](VORTS90_DYNAMIC_RESULTS.md).
+[90-frame full-run results](vorts90_full_geometry/RESULTS.md).
 
 Implementation branch: `codex/deformable-esvr`, based on `ca1db2d`.
 Donor `paper` branch: `ab49a1149a06b734e7a3026bb5e424cc08e94240`.
