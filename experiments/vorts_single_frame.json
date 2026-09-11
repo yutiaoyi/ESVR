@@ -1,0 +1,7 @@
+{
+  "shape_xyz": [128, 128, 128],
+  "storage_axes": "zyx",
+  "dtype": "<f4",
+  "intensity_range": [-1, 1],
+  "frames": [{"path": "../data/xueliao_data/vorts0001.raw", "time": 0, "split": "train"}]
+}

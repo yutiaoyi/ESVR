@@ -10,6 +10,7 @@ __pycache__/
 output/
 data/public/
 data/xueliao_data/
+data/xueliao_timevaryingdata/
 
 # IDE
 .vscode/
