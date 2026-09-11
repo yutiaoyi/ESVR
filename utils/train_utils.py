@@ -151,7 +151,7 @@ def load_volume_chunk(config, bounds):
             image = image.transpose(2, 1, 0)
         subvolume = image[x_start:x_end, y_start:y_end, z_start:z_end]
     else:
-        dtype = np.uint16 if "uint16" in path else np.uint8
+        dtype = np.dtype(config.get("dtype", "uint16" if "uint16" in path else "uint8"))
         mmap_shape = volume_shape[::-1] if transpose else volume_shape
         volume = np.memmap(path, dtype=dtype, mode="r", shape=mmap_shape)
         if transpose:
@@ -159,7 +159,14 @@ def load_volume_chunk(config, bounds):
         subvolume = volume[x_start:x_end, y_start:y_end, z_start:z_end].copy()
 
     divisor = 65535.0 if "uint16" in path else 255.0
-    subvolume = subvolume.astype(np.float32) / divisor
+    subvolume = subvolume.astype(np.float32)
+    if "intensity_range" in config:
+        lo, hi = config["intensity_range"]
+        if hi <= lo or not np.isfinite(subvolume).all():
+            raise ValueError("Invalid intensity range or nonfinite input")
+        subvolume = (subvolume - lo) / (hi - lo)
+    else:
+        subvolume = subvolume / divisor
     result = torch.from_numpy(subvolume).cuda().detach()
     result.requires_grad = False
 

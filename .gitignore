@@ -9,6 +9,7 @@ __pycache__/
 .mplconfig/
 output/
 data/public/
+data/xueliao_data/
 
 # IDE
 .vscode/

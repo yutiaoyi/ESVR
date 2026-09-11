@@ -1,4 +1,15 @@
 DATASET_CONFIGS = {
+    "vorts0001": {
+        "training_mode": "full",
+        "path": "./data/xueliao_data/vorts0001.raw",
+        "x_voxel_size": 128,
+        "y_voxel_size": 128,
+        "z_voxel_size": 128,
+        "use_tif": False,
+        "transpose": True,
+        "dtype": "<f4",
+        "intensity_range": (-1.0, 1.0),
+    },
     "aneurysm": {
         "training_mode": "full",
         "path": "./data/aneurism_256x256x256_uint8.tif",

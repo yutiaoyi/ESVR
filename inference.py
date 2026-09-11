@@ -25,7 +25,7 @@ def load_ground_truth(config):
         if config.get("transpose", False):
             volume = volume.transpose(2, 1, 0)
     else:
-        dtype = np.uint16 if "uint16" in path.lower() else np.uint8
+        dtype = np.dtype(config.get("dtype", "uint16" if "uint16" in path.lower() else "uint8"))
         default_raw_shape = (
             volume_shape[::-1] if config.get("transpose", False) else volume_shape
         )
@@ -43,11 +43,16 @@ def load_ground_truth(config):
             f"Configured shape {volume_shape} does not match loaded shape {volume.shape} "
             f"for {path}"
         )
+    if "intensity_range" in config:
+        lo, hi = config["intensity_range"]
+        if hi <= lo or not np.isfinite(volume).all():
+            raise ValueError("Invalid intensity range or nonfinite input")
+        volume = (volume.astype(np.float32) - lo) / (hi - lo)
     return volume
 
 
 def normalized_tensor(volume):
-    divisor = 65535.0 if volume.dtype == np.uint16 else 255.0
+    divisor = 1.0 if np.issubdtype(volume.dtype, np.floating) else (65535.0 if volume.dtype == np.uint16 else 255.0)
     return torch.from_numpy(np.asarray(volume).astype(np.float32) / divisor)
 
 

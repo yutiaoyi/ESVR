@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 import json
+import argparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import numpy as np
@@ -32,11 +33,19 @@ def dvr(volume, axis):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--vorts', action='store_true')
+    args = parser.parse_args()
     root = Path('output/experiments/paper_repro_p0008')
     dest = Path('output/render_previews')
     dest.mkdir(parents=True, exist_ok=True)
     runs = [('aneurysm', 'aneurysm_chunk_0', 22400),
             ('breast', 'breast_sparse_t60_chunk_0', 89600)]
+    if args.vorts:
+        root = Path('output/experiments/vorts0001_baseline')
+        dest = root/'renders'
+        dest.mkdir(parents=True, exist_ok=True)
+        runs = [('vorts0001', 'vorts0001_chunk_0', 22400)]
     metadata = {'renderer': 'Offline axis-aligned DVR of voxelized PLY',
                 'transfer_function': 'alpha=1-exp(-0.18*clamp(v,0,1)); RGB=(0.95,0.22+0.7*v,0.08+0.7*v)',
                 'background': 'black', 'runs': []}
@@ -63,12 +72,29 @@ def main():
             axes[axis,2].set_title('Mean RGB absolute error (0–0.1)', color='white', fontsize=9)
         for ax in axes.flat:
             ax.axis('off')
-        note = 'Aneurysm' if name == 'aneurysm' else 'Breast: inferred threshold 60/255 preprocessing'
+        note = name if name != 'breast' else 'Breast: inferred threshold 60/255 preprocessing'
         fig.suptitle(note+'\nOffline DVR — identical transfer function for GT and prediction', color='white')
         fig.tight_layout()
         fig.savefig(dest/f'{name}_comparison.png', dpi=140, facecolor=fig.get_facecolor())
         plt.close(fig)
         metadata['runs'].append({'dataset':name, 'ply':str(ply), 'gt':config['path'], 'shape_xyz':list(shape)})
+        mse = float(np.mean((pred.astype(np.float64)-gt)**2))
+        metadata['runs'][-1]['psnr_normalized'] = float(-10*np.log10(mse))
+        if args.vorts:
+            # RAW export restores source intensity units and X-fastest layout.
+            ((pred*2-1).transpose(2,1,0).astype('<f4')).tofile(dest/'reconstruction_128x128x128_float32.raw')
+            metadata['runs'][-1]['rmse_original_units'] = float(2*np.sqrt(mse))
+            fig, axes = plt.subplots(3,3,figsize=(9,9))
+            for axis in range(3):
+                g=np.take(gt,64,axis=axis).T
+                p=np.take(pred,64,axis=axis).T
+                for col,v in enumerate([g,p,np.abs(g-p)]):
+                    axes[axis,col].imshow(v,origin='lower',vmin=0,vmax=0.1 if col==2 else 1,cmap='inferno' if col==2 else 'viridis')
+                    axes[axis,col].set_title(f'{["GT","ESVR","Abs error (0–0.1)"][col]} / {"XYZ"[axis]}=64')
+                    axes[axis,col].axis('off')
+            fig.tight_layout()
+            fig.savefig(dest/'vorts0001_slices.png',dpi=140)
+            plt.close(fig)
         print('Saved', dest/f'{name}_comparison.png', flush=True)
         del model
         torch.cuda.empty_cache()
