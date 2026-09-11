@@ -7,7 +7,11 @@ __pycache__/
 .tools/
 .uv-cache/
 .mplconfig/
-output/
+# Keep generated artifacts ignored; version only main's experiment reports.
+/output/**
+!/output/**/
+!/output/experiments/RESULTS.md
+!/output/experiments/vorts0001_baseline/RESULTS.md
 data/public/
 data/xueliao_data/
 
