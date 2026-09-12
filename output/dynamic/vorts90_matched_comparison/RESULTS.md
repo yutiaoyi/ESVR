@@ -1,5 +1,20 @@
 # Deformable-MLP (dynamic_esvr) — matched-configuration comparison run
 
+> **What this run is, precisely**: an *architecture-isolation* experiment.
+> Initialization and LR are deliberately stripped from this run and replaced
+> with ESVR4D's own settings, even though PLY warm-start and its fine-tuning
+> LR schedule are arguably part of the deformable-MLP method's own intended
+> design, not an incidental choice. That trade-off is the point: this run
+> answers "with every other knob forced equal, does the deformation-MLP or
+> the native-4D-covariance motion representation reconstruct better?" — not
+> "which method performs best when each is used as it's meant to be used."
+> For the latter question, see the companion run at
+> [output/dynamic/vorts90_native_recipe_cuda_fixed/RESULTS.md](../vorts90_native_recipe_cuda_fixed/RESULTS.md),
+> which reruns this method's own original PLY-warm-start recipe
+> (`experiments/run_vorts_dynamic.sh`, unchanged) with only the CUDA
+> position-gradient fix as the variable. Both comparisons are legitimate and
+> answer different questions; neither supersedes the other.
+
 Companion to [output/esvr4d/vorts90_fixed_points/RESULTS.md](../../esvr4d/vorts90_fixed_points/RESULTS.md).
 Same 90-frame `vorts` manifest, same CUDA-fixed copy of the repository, and
 configuration deliberately matched to that ESVR4D run so the two motion

@@ -1,5 +1,11 @@
 # Vorts 90 帧：完整动态训练记录
 
+> **2026-09-12 补充**：本文件的训练用了这个仓库共享 CUDA 体素化核里一个后来才发现的
+> 位置梯度 bug（`dVoxel²` 缩放错误，见 `docs/ESVR4D.md`）。同一套配方
+> （`experiments/run_vorts_dynamic.sh`，未改动）在修复该 bug 之后的重跑见
+> [output/dynamic/vorts90_native_recipe_cuda_fixed/RESULTS.md](../vorts90_native_recipe_cuda_fixed/RESULTS.md)
+> （平均 3D PSNR 22.353dB → 24.254dB）。
+
 **TF 标注：本文件原 2D 指标、原预览图和 GIF 使用自定义 TF，非官方 LUT：**
 `RGB=(0.95,0.22+0.7s,0.08+0.7s)`，`alpha=1-exp(-0.18s)`，`s∈[0,1]`。
 旧结果保留。官方附带 TF 表的新评估见
