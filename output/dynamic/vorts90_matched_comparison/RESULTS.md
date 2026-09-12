@@ -1,19 +1,18 @@
 # Deformable-MLP (dynamic_esvr) — matched-configuration comparison run
 
 > **What this run is, precisely**: an *architecture-isolation* experiment.
-> Initialization and LR are deliberately stripped from this run and replaced
-> with ESVR4D's own settings, even though PLY warm-start and its fine-tuning
-> LR schedule are arguably part of the deformable-MLP method's own intended
-> design, not an incidental choice. That trade-off is the point: this run
-> answers "with every other knob forced equal, does the deformation-MLP or
-> the native-4D-covariance motion representation reconstruct better?" — not
-> "which method performs best when each is used as it's meant to be used."
-> For the latter question, see the companion run at
-> [output/dynamic/vorts90_native_recipe_cuda_fixed/RESULTS.md](../vorts90_native_recipe_cuda_fixed/RESULTS.md),
-> which reruns this method's own original PLY-warm-start recipe
-> (`experiments/run_vorts_dynamic.sh`, unchanged) with only the CUDA
-> position-gradient fix as the variable. Both comparisons are legitimate and
-> answer different questions; neither supersedes the other.
+> Initialization and LR are deliberately matched to ESVR4D's own settings
+> (random init, 30,000 primitives) rather than deformable-MLP's own PLY-
+> warm-start recipe. An earlier version of this note pointed to a PLY-warm-
+> started rerun as a complementary "own best practice" comparison; that run
+> was removed (2026-09-12) because warm-starting from a point cloud that was
+> itself already optimized on frame 1 gives deformable-MLP an initialization
+> advantage ESVR4D has no equivalent way to use, confounding "which motion
+> representation is better" with "which method got a head start." The
+> cleaner single-variable comparison — this run's exact configuration with
+> *only* the LR changed to deformable-MLP's own native scale (5e-5/1.6e-4),
+> initialization and primitive count still random/30,000 as here — is at
+> [output/dynamic/vorts90_matched_native_lr/RESULTS.md](../vorts90_matched_native_lr/RESULTS.md).
 
 Companion to [output/esvr4d/vorts90_fixed_points/RESULTS.md](../../esvr4d/vorts90_fixed_points/RESULTS.md).
 Same 90-frame `vorts` manifest, same CUDA-fixed copy of the repository, and

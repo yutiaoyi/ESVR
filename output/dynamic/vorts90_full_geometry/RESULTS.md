@@ -1,10 +1,11 @@
 # Vorts 90 帧：完整动态训练记录
 
 > **2026-09-12 补充**：本文件的训练用了这个仓库共享 CUDA 体素化核里一个后来才发现的
-> 位置梯度 bug（`dVoxel²` 缩放错误，见 `docs/ESVR4D.md`）。同一套配方
-> （`experiments/run_vorts_dynamic.sh`，未改动）在修复该 bug 之后的重跑见
-> [output/dynamic/vorts90_native_recipe_cuda_fixed/RESULTS.md](../vorts90_native_recipe_cuda_fixed/RESULTS.md)
-> （平均 3D PSNR 22.353dB → 24.254dB）。
+> 位置梯度 bug（`dVoxel²` 缩放错误，见 `docs/ESVR4D.md`）。与本文件配方（PLY 热启动
+> + 原始学习率）在修复该 bug 后的直接对照曾经跑过一版，但因为 PLY 热启动相对
+> ESVR4D（无法做同等热启动）不公平，已删除；与 ESVR4D 的公平对比改为
+> [output/dynamic/vorts90_matched_native_lr/RESULTS.md](../vorts90_matched_native_lr/RESULTS.md)
+> （随机初始化、图元数对齐 ESVR4D，只把学习率换成本文件的原始值）。
 
 **TF 标注：本文件原 2D 指标、原预览图和 GIF 使用自定义 TF，非官方 LUT：**
 `RGB=(0.95,0.22+0.7s,0.08+0.7s)`，`alpha=1-exp(-0.18s)`，`s∈[0,1]`。
