@@ -270,11 +270,17 @@ renderCUDA(
 		for (int i = 0; i < C; i++)
 			dL_dpixel[i] = dL_dpixels[i *  nVoxel_x * nVoxel_y * nVoxel_z + voxel_id];
 	
-	// Gradient of pixel coordinate w.r.t. normalized 
-	// screen-space viewport corrdinates (-1 to 1)
-	const float ddelx_dx = dVoxel_x;
-	const float ddely_dy = dVoxel_y;
-	const float ddelz_dz = dVoxel_z;
+	// d.{x,y,z} above is expressed in voxel-index units (points_xyz_vol and
+	// voxelf are both divided by dVoxel_{x,y,z} relative to world/mean3D
+	// space, see forward.cu's point_vol). The chain rule back to world-space
+	// mean3D therefore needs 1/dVoxel, not dVoxel: mean3D = center - sVoxel/2
+	// + dVoxel * point_vol, so d(point_vol)/d(mean3D) = 1/dVoxel. Using
+	// dVoxel here (as if converting NDC to pixels, per the original
+	// rasterizer this file was adapted from) silently rescaled every
+	// position gradient by dVoxel^2, verified against finite differences.
+	const float ddelx_dx = 1.0f / dVoxel_x;
+	const float ddely_dy = 1.0f / dVoxel_y;
+	const float ddelz_dz = 1.0f / dVoxel_z;
 
 	// Traverse all Gaussians
 	for (int i = 0; i < rounds; i++, toDo -= BLOCK3D_SIZE)
