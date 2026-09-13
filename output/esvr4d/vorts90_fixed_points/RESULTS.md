@@ -1,5 +1,14 @@
 # ESVR4D — vorts 90-frame fixed-population run
 
+> **2026-09-13 update**: this run's optimizer conflated `xyz`/`time`/
+> `log_scale`/`logit_scalar` into one shared LR group — checked against
+> upstream, natively these are five separate groups up to ~300x apart. Fixed
+> in [output/esvr4d/vorts90_native_lr/RESULTS.md](../vorts90_native_lr/RESULTS.md),
+> which also found the native LR *values* (as opposed to just the group
+> structure) give lower measured PSNR here (25.09 dB vs. this run's
+> 28.77 dB) — read that report's Interpretation section before treating
+> either number as simply "better."
+
 First full real-data run of the native-spacetime-primitive representation
 (`esvr4d/`), on the same 90-frame `vorts` sequence as
 `output/dynamic/vorts90_full_geometry/RESULTS.md` (deformable-MLP branch).
