@@ -17,6 +17,20 @@ from dynamic_esvr.data import VolumeSequence
 from esvr4d.model import ESVR4D, query_block
 
 
+def expon_lr(step, lr_init, lr_final, max_steps):
+    """Log-linear decay, matching 4d-gaussian-splatting's get_expon_lr_func
+    (utils/general_utils.py) with lr_delay_steps=0 -- that repo's own
+    update_learning_rate only ever schedules the "xyz" group (the "t" group's
+    scheduling call is commented out in scene/gaussian_model.py, and every
+    other group -- opacity/scaling/rotation/rotation_r -- is never touched
+    after its initial value), so xyz is the only parameter that actually
+    decays natively; everything else here is passed a constant init==final."""
+    if lr_init == lr_final:
+        return lr_init
+    t = min(max(step / max_steps, 0.0), 1.0)
+    return math.exp(math.log(lr_init) * (1 - t) + math.log(lr_final) * t)
+
+
 @torch.no_grad()
 def monitor(model, sequence, indices, block):
     rows = []
@@ -84,18 +98,31 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--manifest", required=True)
     p.add_argument("--output", required=True)
-    p.add_argument("--steps", type=int, default=20000)
+    # LR defaults below are 4d-gaussian-splatting's own values
+    # (arguments/__init__.py, confirmed identical in the real per-scene
+    # configs/dynerf/*.yaml), not values chosen or tuned for this ESVR
+    # adaptation -- see docs/ESVR4D.md. An earlier version of this script
+    # collapsed xyz/time/log_scale/logit_scalar into one shared LR; upstream
+    # gives xyz its own decaying schedule, "time" a constant LR equal to
+    # xyz's *initial* (never-decaying) value, and scaling/opacity/rotation
+    # each their own constant LR, all four to five orders of magnitude apart.
+    p.add_argument("--steps", type=int, default=30000, help="Native iterations")
     p.add_argument("--points", type=int, default=20000)
     p.add_argument("--max-points", type=int, default=150000)
     p.add_argument("--block", type=int, default=64)
     p.add_argument("--temporal-scale", type=float, default=0.5, help="Initial time-axis stddev, normalized time units")
     p.add_argument("--temporal-cutoff", type=float, default=0.05, help="Skip primitives whose marginal at t falls below this")
-    p.add_argument("--lr", type=float, default=0.001, help="LR for xyz/time/log_scale/logit_scalar")
-    p.add_argument("--rotation-lr", type=float, default=0.0008)
+    p.add_argument("--xyz-lr-init", type=float, default=0.00016, help="Native position_lr_init; decays")
+    p.add_argument("--xyz-lr-final", type=float, default=0.0000016, help="Native position_lr_final")
+    p.add_argument("--time-lr", type=float, default=None,
+                   help="Native position_t_lr_init; constant (never decays natively). Default: --xyz-lr-init")
+    p.add_argument("--scale-lr", type=float, default=0.005, help="Native scaling_lr; constant")
+    p.add_argument("--opacity-lr", type=float, default=0.05, help="Native opacity_lr; constant")
+    p.add_argument("--rotation-lr", type=float, default=0.001, help="Native rotation_lr; constant, shared by left/right")
     p.add_argument("--lambda-ssim", type=float, default=0.2)
-    p.add_argument("--densify-from", type=int, default=500)
-    p.add_argument("--densify-until", type=int, default=None, help="Default: 2/3 of --steps")
-    p.add_argument("--densify-every", type=int, default=100)
+    p.add_argument("--densify-from", type=int, default=500, help="Native densify_from_iter")
+    p.add_argument("--densify-until", type=int, default=None, help="Native densify_until_iter; default steps//2 (15000 of 30000 natively)")
+    p.add_argument("--densify-every", type=int, default=100, help="Native densification_interval")
     # Calibrated against observed grad_space/grad_time magnitudes on the real
     # vorts sequence (~90th percentile after a few hundred steps at points=20000,
     # block=64; see docs/ESVR4D.md). Not derived from the donor paper, which
@@ -112,10 +139,13 @@ def main():
     p.add_argument("--snapshot-every", type=int, default=0, help="Retain additional numbered checkpoints every N steps")
     args = p.parse_args()
     if args.densify_until is None:
-        args.densify_until = 2 * args.steps // 3
+        args.densify_until = args.steps // 2
+    if args.time_lr is None:
+        args.time_lr = args.xyz_lr_init
     if args.steps < 1 or args.block < 1 or not 0 <= args.lambda_ssim <= 1:
         p.error("Invalid steps, block or SSIM weight")
-    if min(args.lr, args.rotation_lr) <= 0:
+    if min(args.xyz_lr_init, args.xyz_lr_final, args.time_lr, args.scale_lr,
+           args.opacity_lr, args.rotation_lr) <= 0:
         p.error("Invalid learning rate")
     if args.eval_only and not args.resume:
         p.error("--eval-only requires --resume")
@@ -148,9 +178,22 @@ def main():
                 p.error(f"Resume option differs: {name}")
 
     def build_optimizer():
+        # Five native groups (scene/gaussian_model.py: training_setup),
+        # replacing an earlier scheme that wrongly lumped xyz/time/log_scale/
+        # logit_scalar into one shared LR.
         return torch.optim.Adam([
-            {"params": [model.xyz, model.time, model.log_scale, model.logit_scalar], "lr": args.lr},
-            {"params": [model.left, model.right], "lr": args.rotation_lr}])
+            {"params": [model.xyz], "lr": args.xyz_lr_init, "name": "xyz"},
+            {"params": [model.time], "lr": args.time_lr, "name": "time"},
+            {"params": [model.log_scale], "lr": args.scale_lr, "name": "scale"},
+            {"params": [model.logit_scalar], "lr": args.opacity_lr, "name": "opacity"},
+            {"params": [model.left, model.right], "lr": args.rotation_lr, "name": "rotation"}])
+
+    lr_schedule = dict(
+        xyz=lambda step: expon_lr(step, args.xyz_lr_init, args.xyz_lr_final, args.steps),
+        time=lambda step: args.time_lr,
+        scale=lambda step: args.scale_lr,
+        opacity=lambda step: args.opacity_lr,
+        rotation=lambda step: args.rotation_lr)
 
     optimizer = build_optimizer()
     start_step = 0
@@ -197,9 +240,8 @@ def main():
                 # runaway densification on real data; see docs/ESVR4D.md.
                 model.record_gradients(sliced, package["visibility_filter"], model.time.grad, batch_size=1)
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, error_if_nonfinite=True)
-            factor = 0.1 ** (step / args.steps)
-            for group, lr in zip(optimizer.param_groups, [args.lr, args.rotation_lr]):
-                group["lr"] = lr * factor
+            for group in optimizer.param_groups:
+                group["lr"] = lr_schedule[group["name"]](step)
             optimizer.step()
             model.stabilize()
             if args.densify_from <= step <= args.densify_until and step % args.densify_every == 0:

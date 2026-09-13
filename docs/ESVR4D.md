@@ -220,10 +220,21 @@ manifest (same "resume = continue this exact schedule" semantics as
   has no equivalent unit here; `space_threshold`/`time_threshold` in
   `ESVR4D.densify()` were chosen to produce a reasonable split rate on the
   smoke test, not tuned against real data or the donor paper's ablations.
-- **No learning-rate schedule differentiation between `xyz`/`time`/`scale`
-  the way the paper's optimizer groups do** beyond the two groups already
-  present (position-like parameters vs. rotation quaternions); this may
-  under- or over-train specific channels relative to the paper.
+- ~~No learning-rate schedule differentiation between `xyz`/`time`/`scale`~~
+  **Fixed.** `train_esvr4d.py` originally lumped `xyz`, `time`, `log_scale`,
+  and `logit_scalar` into one shared LR group. Checked against
+  `fudan-zvg/4d-gaussian-splatting`'s own `scene/gaussian_model.py`: natively
+  these are five separate groups (`xyz`, `t`, `scaling`, `opacity`,
+  `rotation`) spanning `0.00016` to `0.05` — up to ~300x apart. A further
+  detail easy to miss by only reading `arguments/__init__.py`: upstream's own
+  `update_learning_rate` only ever schedules the `"xyz"` group (its call for
+  `"t"` is commented out in the source), so natively only `xyz` decays
+  (`0.00016→0.0000016`); `time` stays constant at `xyz`'s *initial* value
+  forever, and `scaling`/`opacity`/`rotation` are constant for the entire
+  run at `0.005`/`0.05`/`0.001` respectively. Fixed with five real optimizer
+  groups matching this exactly. Verified stable across 3 seeded real-data
+  reruns with densification off and 3 with it on (no crashes either way,
+  though densification's own quality effect remains unverified, see above).
 
 ## License
 
