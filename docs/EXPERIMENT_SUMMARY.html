@@ -320,7 +320,7 @@
     </div>
     <div class="stat">
       <div class="stat-label">已完成真实数据实验</div>
-      <div class="stat-value">13</div>
+      <div class="stat-value">14</div>
       <div class="stat-sub">全部结果已验证,无进行中实验</div>
     </div>
     <div class="stat">
@@ -410,10 +410,33 @@
           <td><span class="pill verified dot">参照</span></td>
           <td class="num">38.86 dB</td>
         </tr>
+        <tr class="best">
+          <td class="desc-cell"><b>单帧,CUDA 修复的单变量对照</b></td>
+          <td>
+            <div class="run-config">与首行完全相同的原生配方,仅 position 学习率按 ÷4096 补偿(见下方说明)</div>
+            <div class="run-path path">output/experiments/vorts0001_cuda_fixed_lr_only/</div>
+          </td>
+          <td class="scale-cell">
+            <div class="run-config"><b>36.0 s</b> · 22,400 迭代</div>
+            <div class="run-config">20,000→峰值 83,546→剪枝后 22,424 图元</div>
+            <div class="run-config">全程无 NaN / OOM,零发散</div>
+          </td>
+          <td><span class="pill verified dot">干净对照</span></td>
+          <td class="num">39.94 dB</td>
+        </tr>
       </tbody>
     </table>
     <div class="callout">
-      三行都是"每帧独立训练、互不共享参数"的结果,用来衡量共享/动态表征牺牲了多少保真度换取压缩率——不是三种时变方法的直接竞争对手。
+      前三行都是"每帧独立训练、互不共享参数"的结果,用来衡量共享/动态表征牺牲了多少保真度换取压缩率——不是三种时变方法的直接竞争对手。
+      <br><br>
+      <b>关于 CUDA 修复本身的影响,前两行不能直接对比</b>——第一行(41.22dB)用的是 <code>train_chunk.py</code> 原生调优配方(自适应增密+分参数组学习率),
+      第二行(38.86dB)换了完全不同的简化训练脚本(<code>train_dynamic.py --allow-single-frame</code>,固定图元、无增密),
+      两行之间同时差了训练脚本、图元策略、迭代次数、学习率四个变量,差值不能归因于 CUDA。
+      直接把第一行的原生配方套到修复后的 CUDA 上曾经<b>训练发散、显存溢出</b>——因为原始 <code>position_lr</code>(8e-6→1e-6)是在
+      "位置梯度被压缩了 4096 倍"这个 bug 存在的前提下调出来的,梯度修正后同样的学习率相当于步长突然放大了 4096 倍。
+      最后一行是补上的单变量对照:仅把 <code>position_lr</code> 按 ÷4096 反向补偿(保持"学习率×梯度"这个有效更新幅度不变),
+      其余全部原样保留,训练稳定收敛,不再发散。<b>在这个干净对照下,CUDA 修复让单帧静态重建从 41.77dB 降到 39.94dB,真实降幅 −1.83dB。</b>
+      详见 <code>output/experiments/vorts0001_cuda_fixed_lr_only/RESULTS.md</code>(其中还记录了一次学习率补偿方向搞错导致图元数骤减到 5,409 的失败尝试,作为负面结果保留未删除)。
     </div>
   </section>
 
