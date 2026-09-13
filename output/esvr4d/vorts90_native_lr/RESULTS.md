@@ -2,6 +2,17 @@
 
 > **Fixing the structural bug lowered the measured number — read the
 > "Interpretation" section before treating 28.77 dB as the better result.**
+>
+> **2026-09-13 correction**: this run's `--steps 30000` (this method's own
+> native `--iterations`) was *also* a change from `vorts90_fixed_points`'
+> 40,000, alongside the LR-group fix — a second, unintended variable in the
+> "28.77 vs 25.09 dB" comparison below. A step-matched rerun at 40,000 steps,
+> everything else identical, is at
+> [output/esvr4d/vorts90_native_lr_40k/RESULTS.md](../vorts90_native_lr_40k/RESULTS.md):
+> it lands at 25.68 dB, confirming the LR-structure fix genuinely lowers
+> ESVR4D's PSNR here (not just an artifact of fewer steps), though the true
+> effect (−3.09 dB) is a little smaller than this page's confounded −3.68 dB
+> headline number suggested.
 
 Completed 2026-09-13. Branch: `codex/4dgs-esvr`.
 
