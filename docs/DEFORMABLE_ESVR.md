@@ -146,6 +146,34 @@ latest one. The full-run summary verifies export completeness, records data
 hashes, plots metrics/slices, creates a 90-frame DVR comparison GIF, and writes
 an optimizer-free `model_inference.pt` usable by `inference_dynamic.py`.
 
+## 2026-09-13 fix: canonical LR groups were wrongly conflated (this file's code lives on codex/4dgs-esvr too)
+
+`train_dynamic.py` is unchanged on this branch (`codex/deformable-esvr`,
+kept as the untouched historical baseline) but is also inherited unmodified
+on `codex/4dgs-esvr` and `codex/scaffold4d-esvr`, where real comparison
+training happens against a CUDA-fixed voxelizer this branch's own copy does
+not have. `canonical = [model.xyz, model.log_scale, model.rotation,
+model.logit_scalar]` shared one `--lr` — checked against this repository's
+own `experiments/run_vorts0001.sh` (the script behind the validated
+single-frame baseline, not just `arguments/__init__.py`'s bare defaults,
+which a dataset-specific override changes): natively these are four
+separate groups — position `8e-6→1e-6` (decaying), scaling `5e-5`
+(constant), rotation `1e-5` (constant), opacity `7.5e-3→5e-4` (decaying) —
+spanning ~1000x. Fixed (on `codex/4dgs-esvr`, where `train_dynamic.py` is
+used) with five real optimizer groups (four canonical + the deformation
+network, which was already correctly a single group, matching upstream
+`scene/deform_model.py`'s own single "deform" group) and an `expon_lr`
+helper. ESVR's own per-parameter `*_max_steps` are expressed in "scans"
+(`train_chunk.py`'s own unit, converted internally by ×8 to raw iterations)
+with no equivalent concept in this dynamic training loop's single `--steps`
+budget; each group's native init/final magnitude is kept, decayed across
+the whole `--steps` schedule instead of reproducing the scan-based split —
+a documented adaptation of the *schedule mechanics*, not a change to the
+native LR *magnitudes*. Verified stable across 3 seeded real-data reruns
+(no crashes) before a full real run; see
+`output/dynamic/vorts90_native_canonical_lr/RESULTS.md` for the result and
+how it compares to this branch's own earlier PLY-warm-start run.
+
 ## License
 
 Network design adapted from Ziyi Yang's MIT-licensed code; the notice is retained

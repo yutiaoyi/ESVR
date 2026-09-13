@@ -13,6 +13,24 @@ from dynamic_esvr.data import VolumeSequence
 from dynamic_esvr.model import DynamicESVR, query_block
 
 
+def expon_lr(step, lr_init, lr_final, max_steps):
+    """Log-linear decay, matching ESVR's/3DGS's get_expon_lr_func
+    (utils/general_utils.py) with lr_delay_steps=0. Native canonical
+    parameters (experiments/run_vorts0001.sh, the script actually used for
+    this repository's own validated single-frame baseline) use distinct
+    per-parameter max_steps values expressed in "scans" (position/scaling/
+    rotation: 1200 scans; opacity: 16 scans -- ESVR's train_chunk.py
+    multiplies scans by 8 internally to get raw iterations). This dynamic
+    training loop has no "scan" concept and a single overall --steps budget,
+    so each group's native init/final magnitude is kept but decayed across
+    the whole --steps schedule rather than reproducing the scan-based
+    max_steps split -- a documented adaptation, not a native value change."""
+    if lr_init == lr_final:
+        return lr_init
+    t = min(max(step / max_steps, 0.0), 1.0)
+    return math.exp(math.log(lr_init) * (1 - t) + math.log(lr_final) * t)
+
+
 @torch.no_grad()
 def monitor(model, sequence, indices, block, deformation):
     rows = []
@@ -90,7 +108,20 @@ def main():
     p.add_argument("--static", action="store_true", help="Same shared canonical model, no deformation (ablation)")
     p.add_argument("--allow-single-frame", action="store_true")
     p.add_argument("--init-ply")
-    p.add_argument("--lr", type=float, default=0.001)
+    # Canonical LR defaults below are ESVR's own native values from
+    # experiments/run_vorts0001.sh (this repository's actual validated
+    # single-frame baseline recipe, not just arguments/__init__.py's bare
+    # defaults, which this script's own dataset override differs from) --
+    # not values chosen or tuned for this dynamic adaptation. An earlier
+    # version of this script lumped xyz/log_scale/rotation/logit_scalar into
+    # one shared --lr; natively these are four separate groups spanning
+    # ~1000x (opacity 0.0075 vs. position 0.000008). See docs/DEFORMABLE_ESVR.md.
+    p.add_argument("--xyz-lr-init", type=float, default=0.000008, help="Native position_lr_init; decays")
+    p.add_argument("--xyz-lr-final", type=float, default=0.000001, help="Native position_lr_final")
+    p.add_argument("--scale-lr", type=float, default=0.00005, help="Native scaling_lr; constant")
+    p.add_argument("--rotation-lr", type=float, default=0.00001, help="Native rotation_lr; constant")
+    p.add_argument("--opacity-lr-init", type=float, default=0.0075, help="Native opacity_lr_init; decays")
+    p.add_argument("--opacity-lr-final", type=float, default=0.0005, help="Native opacity_lr_final")
     p.add_argument("--deform-lr", type=float, default=0.0008)
     p.add_argument("--lambda-ssim", type=float, default=0.2)
     p.add_argument("--motion-reg", type=float, default=0.0001)
@@ -104,7 +135,9 @@ def main():
     args = p.parse_args()
     if args.steps < 1 or args.block < 1 or min(args.warmup, args.eval_every, args.snapshot_every) < 0 or not 0 <= args.lambda_ssim <= 1:
         p.error("Invalid steps, block, warmup or SSIM weight")
-    if min(args.lr, args.deform_lr) <= 0 or min(args.motion_reg, args.time_jitter) < 0:
+    if min(args.xyz_lr_init, args.xyz_lr_final, args.scale_lr, args.rotation_lr,
+           args.opacity_lr_init, args.opacity_lr_final, args.deform_lr) <= 0 \
+            or min(args.motion_reg, args.time_jitter) < 0:
         p.error("Invalid learning rate or regularization")
     if args.eval_only and not args.resume:
         p.error("--eval-only requires --resume")
@@ -138,9 +171,22 @@ def main():
                 p.error(f"Resume option differs: {name}")
     elif args.init_ply:
         model.initialize_ply(args.init_ply)
-    canonical = [model.xyz, model.log_scale, model.rotation, model.logit_scalar]
-    optimizer = torch.optim.Adam([{"params": canonical, "lr": args.lr},
-                                  {"params": model.deform.parameters(), "lr": args.deform_lr}])
+    # Five groups: four native canonical groups (position, scaling,
+    # rotation, opacity -- previously wrongly merged into one) plus the
+    # deformation network, which upstream (scene/deform_model.py) also
+    # keeps as a single group, so that part was already faithful.
+    optimizer = torch.optim.Adam([
+        {"params": [model.xyz], "lr": args.xyz_lr_init, "name": "xyz"},
+        {"params": [model.log_scale], "lr": args.scale_lr, "name": "scale"},
+        {"params": [model.rotation], "lr": args.rotation_lr, "name": "rotation"},
+        {"params": [model.logit_scalar], "lr": args.opacity_lr_init, "name": "opacity"},
+        {"params": model.deform.parameters(), "lr": args.deform_lr, "name": "deform"}])
+    lr_schedule = dict(
+        xyz=lambda step: expon_lr(step, args.xyz_lr_init, args.xyz_lr_final, args.steps),
+        scale=lambda step: args.scale_lr,
+        rotation=lambda step: args.rotation_lr,
+        opacity=lambda step: expon_lr(step, args.opacity_lr_init, args.opacity_lr_final, args.steps),
+        deform=lambda step: args.deform_lr * 0.1 ** (step / args.steps))
     start_step = 0
     if saved:
         optimizer.load_state_dict(saved["optimizer"])
@@ -185,9 +231,8 @@ def main():
                 raise RuntimeError(f"Nonfinite loss at step {step}")
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, error_if_nonfinite=True)
-            factor = 0.1 ** (step / args.steps)
-            for group, lr in zip(optimizer.param_groups, [args.lr, args.deform_lr]):
-                group["lr"] = lr * factor
+            for group in optimizer.param_groups:
+                group["lr"] = lr_schedule[group["name"]](step)
             optimizer.step()
             if args.eval_every and (step == 1 or step % args.eval_every == 0 or step == args.steps):
                 values = monitor(model, sequence, monitor_indices, args.block, active)

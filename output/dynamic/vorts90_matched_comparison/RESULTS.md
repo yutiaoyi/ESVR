@@ -13,6 +13,16 @@
 > *only* the LR changed to deformable-MLP's own native scale (5e-5/1.6e-4),
 > initialization and primitive count still random/30,000 as here — is at
 > [output/dynamic/vorts90_matched_native_lr/RESULTS.md](../vorts90_matched_native_lr/RESULTS.md).
+>
+> **2026-09-13**: that "native LR" comparison used one shared 5e-5 value for
+> all four canonical parameters, itself a simplification — natively
+> position/scale/rotation/opacity are four separate LRs up to ~1000x apart
+> (canonical position/scale/rotation/opacity conflated into one group was a
+> real bug, not just a coarser approximation). The real fix, keeping the
+> deformable-MLP recipe's own initialization (random, matching this run) but
+> with all four groups properly separated, reached **28.90 dB** — see
+> [output/dynamic/vorts90_native_canonical_lr/RESULTS.md](../vorts90_native_canonical_lr/RESULTS.md),
+> currently the best real-90-frame result of any run in this repository.
 
 Companion to [output/esvr4d/vorts90_fixed_points/RESULTS.md](../../esvr4d/vorts90_fixed_points/RESULTS.md).
 Same 90-frame `vorts` manifest, same CUDA-fixed copy of the repository, and
