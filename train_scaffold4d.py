@@ -18,6 +18,19 @@ from dynamic_esvr.data import VolumeSequence
 from scaffold4d.model import ScaffoldESVR, query_block
 
 
+def expon_lr(step, lr_init, lr_final, max_steps):
+    """Log-linear (exponential) decay, matching 4D-Scaffold-GS's/3DGS's
+    get_expon_lr_func (utils/general_utils.py) with lr_delay_steps=0 (i.e.
+    without the warmup branch: upstream sets lr_delay_mult on every group
+    but never sets lr_delay_steps > 0 anywhere, so that branch of their own
+    scheduler is dead code and warmup never actually applies -- verified by
+    reading update_learning_rate's call sites, not assumed)."""
+    if lr_init == 0.0 and lr_final == 0.0:
+        return 0.0
+    t = min(max(step / max_steps, 0.0), 1.0)
+    return math.exp(math.log(lr_init) * (1 - t) + math.log(lr_final) * t)
+
+
 @torch.no_grad()
 def monitor(model, sequence, indices, block):
     rows = []
@@ -84,38 +97,53 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--manifest", required=True)
     p.add_argument("--output", required=True)
-    p.add_argument("--steps", type=int, default=20000)
+    # Defaults below are 4D-Scaffold-GS's own values from arguments/__init__.py
+    # and scripts/train_n3dv.sh (the script behind the paper's reported
+    # numbers), not values chosen or tuned for this ESVR adaptation. See
+    # docs/ESVR_SCAFFOLD4D.md for the source-reading map.
+    p.add_argument("--steps", type=int, default=120000, help="train_n3dv.sh's --iterations")
     p.add_argument("--anchors", type=int, default=6000)
-    p.add_argument("--children", type=int, default=5)
+    p.add_argument("--children", type=int, default=10, help="Native n_offsets")
     p.add_argument("--feat-dim", type=int, default=32)
     p.add_argument("--hidden", type=int, default=32)
-    p.add_argument("--temporal-beta", type=float, default=4.0)
-    p.add_argument("--temporal-cutoff", type=float, default=1e-3)
+    p.add_argument("--temporal-beta", type=float, default=4.0, help="Native hparam_beta")
+    p.add_argument("--temporal-cutoff", type=float, default=1e-3,
+                   help="ESVR-only efficiency cutoff; no native equivalent (upstream alpha-composites, no hard inclusion gate)")
     p.add_argument("--max-anchors", type=int, default=40000)
     p.add_argument("--block", type=int, default=64)
-    p.add_argument("--lr", type=float, default=0.005, help="LR for anchor/offset/log_offset_scale")
-    p.add_argument("--feat-lr", type=float, default=0.005, help="LR for anchor_feat")
-    p.add_argument("--mlp-lr", type=float, default=0.002, help="LR for the shared opacity/shape/flow heads")
-    p.add_argument("--lambda-ssim", type=float, default=0.2)
-    p.add_argument("--lambda-vol", type=float, default=0.01, help="Volume regularizer weight, matches the paper's own default")
-    p.add_argument("--densify-from", type=int, default=500)
-    p.add_argument("--densify-until", type=int, default=None, help="Default: 2/3 of --steps")
-    p.add_argument("--densify-every", type=int, default=100)
-    p.add_argument("--densify-grad-threshold", type=float, default=2e-4)
+    p.add_argument("--tile-sampling", action="store_true", help="ESVR-only spatial sampling; no native equivalent (upstream samples camera rays)")
+    # Anchor position is frozen (lr 0) natively -- not a tunable default here,
+    # it is the paper's own design (scene/gaussian_model.py: position_lr_init
+    # = position_lr_final = 0.0). Exposed only so config.json records it.
+    p.add_argument("--anchor-lr", type=float, default=0.0)
+    p.add_argument("--offset-lr-init", type=float, default=0.01)
+    p.add_argument("--offset-lr-final", type=float, default=0.0001)
+    p.add_argument("--feat-lr", type=float, default=0.0075, help="Native feature_lr; constant, no decay")
+    p.add_argument("--scale-lr", type=float, default=0.007, help="Native scaling_lr (maps to log_offset_scale); constant, no decay")
+    p.add_argument("--opacity-mlp-lr-init", type=float, default=0.002)
+    p.add_argument("--opacity-mlp-lr-final", type=float, default=0.00002)
+    p.add_argument("--shape-mlp-lr", type=float, default=0.004, help="Native mlp_cov_lr; constant, no decay")
+    p.add_argument("--flow-mlp-lr", type=float, default=0.001, help="Native mlp_flow_lr; constant, no decay")
+    p.add_argument("--lambda-ssim", type=float, default=0.2, help="Native lambda_dssim")
+    p.add_argument("--lambda-vol", type=float, default=0.01, help="Native volume regularizer weight")
+    p.add_argument("--densify-from", type=int, default=1500, help="Native update_from")
+    p.add_argument("--densify-until", type=int, default=None, help="Native update_until; default steps//2 (train_n3dv.sh: 60000 of 120000)")
+    p.add_argument("--densify-every", type=int, default=100, help="Native update_interval")
+    p.add_argument("--densify-grad-threshold", type=float, default=2e-4, help="Native densify_grad_threshold")
     p.add_argument("--densify-spatial-size", type=float, default=0.02)
     p.add_argument("--densify-temporal-size", type=float, default=0.2)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--resume", help="Trusted local checkpoint; same manifest and training options required")
     p.add_argument("--eval-only", action="store_true")
-    p.add_argument("--tile-sampling", action="store_true", help="Sample nonoverlapping spatial tiles, including boundaries")
     p.add_argument("--eval-every", type=int, default=0, help="Monitor first/middle/last training frames every N steps")
     p.add_argument("--snapshot-every", type=int, default=0, help="Retain additional numbered checkpoints every N steps")
     args = p.parse_args()
     if args.densify_until is None:
-        args.densify_until = 2 * args.steps // 3
+        args.densify_until = args.steps // 2
     if args.steps < 1 or args.block < 1 or not 0 <= args.lambda_ssim <= 1:
         p.error("Invalid steps, block or SSIM weight")
-    if min(args.lr, args.feat_lr, args.mlp_lr) <= 0:
+    if min(args.offset_lr_init, args.feat_lr, args.scale_lr, args.opacity_mlp_lr_init,
+           args.shape_mlp_lr, args.flow_mlp_lr) <= 0 or args.anchor_lr < 0:
         p.error("Invalid learning rate")
     if args.eval_only and not args.resume:
         p.error("--eval-only requires --resume")
@@ -149,10 +177,29 @@ def main():
                 p.error(f"Resume option differs: {name}")
 
     def build_optimizer():
+        # Seven native optimizer groups (scene/gaussian_model.py:
+        # training_setup), not the collapsed 3-group scheme an earlier
+        # version of this script used. Most critically: anchor position gets
+        # its own group at lr 0 (frozen) instead of being lumped with offset
+        # -- conflating the two was a real bug, not a stylistic choice, see
+        # docs/ESVR_SCAFFOLD4D.md.
         return torch.optim.Adam([
-            {"params": [model.anchor, model.offset, model.log_offset_scale], "lr": args.lr},
-            {"params": [model.anchor_feat], "lr": args.feat_lr},
-            {"params": model.heads.parameters(), "lr": args.mlp_lr}])
+            {"params": [model.anchor], "lr": args.anchor_lr, "name": "anchor"},
+            {"params": [model.offset], "lr": args.offset_lr_init, "name": "offset"},
+            {"params": [model.log_offset_scale], "lr": args.scale_lr, "name": "scale"},
+            {"params": [model.anchor_feat], "lr": args.feat_lr, "name": "feat"},
+            {"params": model.heads["opacity"].parameters(), "lr": args.opacity_mlp_lr_init, "name": "opacity_mlp"},
+            {"params": model.heads["shape"].parameters(), "lr": args.shape_mlp_lr, "name": "shape_mlp"},
+            {"params": model.heads["flow"].parameters(), "lr": args.flow_mlp_lr, "name": "flow_mlp"}])
+
+    lr_schedule = dict(
+        anchor=lambda step: expon_lr(step, args.anchor_lr, args.anchor_lr, args.steps),
+        offset=lambda step: expon_lr(step, args.offset_lr_init, args.offset_lr_final, args.steps),
+        scale=lambda step: args.scale_lr,
+        feat=lambda step: args.feat_lr,
+        opacity_mlp=lambda step: expon_lr(step, args.opacity_mlp_lr_init, args.opacity_mlp_lr_final, args.steps),
+        shape_mlp=lambda step: args.shape_mlp_lr,
+        flow_mlp=lambda step: args.flow_mlp_lr)
 
     optimizer = build_optimizer()
     start_step = 0
@@ -191,14 +238,18 @@ def main():
             if args.lambda_vol and len(sliced.get_xyz):
                 loss = loss + args.lambda_vol * sliced.get_scaling.prod(dim=-1).mean()
             if not torch.isfinite(loss):
+                diag = dict(step=step, pred_min=pred.min().item(), pred_max=pred.max().item(),
+                    active=len(sliced.get_xyz),
+                    scale_min=sliced.get_scaling.min().item() if len(sliced.get_xyz) else None,
+                    scale_max=sliced.get_scaling.max().item() if len(sliced.get_xyz) else None)
+                print("NONFINITE " + json.dumps(diag), flush=True)
                 raise RuntimeError(f"Nonfinite loss at step {step}")
             loss.backward()
             if len(sliced.get_xyz):
                 model.record_gradients(sliced, package["visibility_filter"])
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, error_if_nonfinite=True)
-            factor = 0.1 ** (step / args.steps)
-            for group, lr in zip(optimizer.param_groups, [args.lr, args.feat_lr, args.mlp_lr]):
-                group["lr"] = lr * factor
+            for group in optimizer.param_groups:
+                group["lr"] = lr_schedule[group["name"]](step)
             optimizer.step()
             model.stabilize()
             if args.densify_from <= step <= args.densify_until and step % args.densify_every == 0:

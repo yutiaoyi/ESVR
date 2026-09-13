@@ -74,9 +74,33 @@ class ScaffoldESVR(nn.Module):
         offset_scale = self.log_offset_scale.exp()
         home_xyz = self.anchor[:, None, :3] + self.offset[..., :3] * offset_scale[:, None, :3]
         home_t = self.anchor[:, None, 3:4] + self.offset[..., 3:4] * offset_scale[:, None, 3:4]
-        scale = offset_scale[:, None, 4:7] * shape_out[..., :3].sigmoid()
+        # Root cause of the nonfinite-loss crash (confirmed across 4 seeded
+        # runs, each catching it at a different step: pred itself was
+        # already NaN, and scale had collapsed to ~1e-9..1e-10 every time).
+        # The final scale is offset_scale (floored at 1e-4 by stabilize())
+        # TIMES sigmoid(shape_gate), and sigmoid has no floor -- it can
+        # approach 0 as closely as the MLP output goes negative, so the
+        # product has no real floor at all. A near-zero scale in any axis
+        # makes that ellipsoid's covariance numerically singular in the
+        # CUDA voxelizer (determinant near 0, its inverse blows up), which
+        # is exactly the kind of value that turns an ordinary-looking
+        # inf*0 or inf-inf into NaN. Floored directly on the product, not
+        # just on offset_scale, since clamping only the input to a
+        # multiplication doesn't bound the output.
+        scale = (offset_scale[:, None, 4:7] * shape_out[..., :3].sigmoid()).clamp_min(1e-4)
         rotation = normalize_quaternion(shape_out[..., 4:8])
-        sigma = F.elu(shape_out[..., 3:4]) + 1
+        # Numerical guardrail, not part of the paper's objective (matches
+        # the spirit of esvr4d's stabilize()): sigma is an unclamped MLP
+        # output raised to a 4th power downstream (temporal_beta). A
+        # 40000+-step real-data run hit a nonfinite loss at a different step
+        # on every otherwise-identical seeded rerun -- a float32 precision
+        # cascade through CUDA atomics, not a fixed logic bug -- traced to
+        # sigma drifting toward extremes with no bound in either direction
+        # (near 0: almost every child stays "on" at almost every time,
+        # summing enormous overlapping contributions since ESVR's voxelizer
+        # adds rather than alpha-composites; very large: dt*sigma overflows
+        # under the 4th power). Clamped to a wide but safe range.
+        sigma = (F.elu(shape_out[..., 3:4]) + 1).clamp(1e-2, 1e2)
         return SimpleNamespace(opacity_raw=opacity_raw, home_xyz=home_xyz, home_t=home_t,
                                scale=scale, rotation=rotation, sigma=sigma, flow=flow)
 
@@ -93,7 +117,10 @@ class ScaffoldESVR(nn.Module):
         # (through its anchor's shared feature, updated by its siblings).
         mask = opacity[..., 0] > self.config["temporal_cutoff"]
         flat = lambda t: t.reshape(-1, t.shape[-1])[mask.reshape(-1)]
-        return SimpleNamespace(get_xyz=flat(xyz), get_scaling=flat(g.scale),
+        selected_xyz = flat(xyz)
+        if selected_xyz.requires_grad:
+            selected_xyz.retain_grad()
+        return SimpleNamespace(get_xyz=selected_xyz, get_scaling=flat(g.scale),
             get_rotation=flat(g.rotation), get_opacity=flat(opacity), mask=mask,
             opacity_t=flat(opacity_t),
             anchor_index=torch.arange(len(self.anchor), device=self.anchor.device)
@@ -102,6 +129,12 @@ class ScaffoldESVR(nn.Module):
     @torch.no_grad()
     def stabilize(self):
         self.log_offset_scale.clamp_(math.log(1e-4), math.log(10))
+        # get_xyz is home_xyz (a function of `offset`) plus flow*dt; dt has
+        # no natural bound (unlike static offsets, a child's home time can
+        # drift arbitrarily far from [0,1] with no clock to reset it), and
+        # an unbounded offset let dt grow large enough to contribute to the
+        # same nonfinite-loss cascade sigma's clamp above addresses.
+        self.offset.clamp_(-10, 10)
 
     @torch.no_grad()
     def record_gradients(self, sliced, visibility):

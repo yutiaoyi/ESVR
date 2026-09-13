@@ -174,8 +174,73 @@ genuine train/test split rather than an all-frames-trained real-data run,
 and it shows real (if imperfect) interpolation, plausibly because the
 paper's constant-velocity motion model matches this specific synthetic
 scene's actual motion (rigid translation) closely. Checkpoint reload
-verified bit-exact. Densification did not trigger at the paper's default
-gradient threshold on this small easy problem (never recalibrated against
-real observed gradients, the same kind of miscalibration `esvr4d`'s own
-densification investigation ran into) — left disabled/uninvestigated
-pending a real-data run. Real 90-frame `vorts` training not yet attempted.
+verified bit-exact.
+
+## Two structural bugs found only once real data and native hyperparameters were used together
+
+An earlier version of this branch matched its optimizer to the other two
+branches' settings (single shared LR across anchor+offset+everything else,
+40,000 steps, no densification) rather than 4D-Scaffold-GS's own. Once asked
+to use the paper's own hyperparameters instead, two more real problems
+surfaced that the matched-config runs and the synthetic smoke test had not
+exercised:
+
+1. **Anchor position and offset were wrongly lumped into one optimizer
+   group.** Upstream's own `training_setup` gives anchor position its own
+   group at `position_lr_init = position_lr_final = 0.0` — anchor position
+   is frozen for the entire training, and only `offset` (its own group,
+   `0.01→0.0001`) actually moves. `train_scaffold4d.py` originally put both
+   under a single shared LR, letting the "coarse fixed grid" the anchors are
+   supposed to be move freely — not a value that was off by some factor, a
+   structure the paper deliberately keeps separate that got merged. Fixed
+   by giving every one of the paper's parameter groups (anchor, offset,
+   scale, feature, three MLP heads) its own optimizer group and its own
+   `expon_lr`-scheduled learning rate, matching `scene/gaussian_model.py`'s
+   `training_setup`/`update_learning_rate` (verified upstream's own
+   `lr_delay_steps` is never actually set above 0 anywhere, so despite
+   `*_delay_mult` being configured on every group, the warmup branch of
+   their scheduler is dead code and never fires — the correct native
+   behavior is plain log-linear decay, no warmup, confirmed by reading
+   `update_learning_rate`'s call sites, not assumed from the docstring).
+
+2. **The final per-child scale had no real floor.** `scale = offset_scale *
+   sigmoid(shape_gate)`: `offset_scale` was floored by `stabilize()`, but
+   `sigmoid` has no floor of its own — it can approach 0 as closely as the
+   MLP output goes negative, so the *product* was still unbounded below.
+   Real-90-frame training with the corrected native optimizer hit a
+   nonfinite loss reproducibly, but at a **different step on every
+   identically-seeded rerun** (1215, 1379, 1951, 1021, 1543, 278 across
+   different attempts) — the signature of a float32 precision cascade
+   through CUDA's nondeterministic atomics, not a fixed logic bug. Added
+   direct diagnostics (`pred`/scale min-max at the crash) across 4 seeded
+   reruns and found the same thing every time: `pred` itself was already
+   NaN, and the per-child scale had collapsed to `~1e-9`–`~1e-10` in at
+   least one axis just before it — degenerate enough to make that
+   ellipsoid's covariance numerically singular in the CUDA voxelizer.
+   Fixed with a direct floor on the product itself
+   (`scale.clamp_min(1e-4)`), plus the same kind of numerical guardrail
+   already used elsewhere in this repository for `sigma` (unclamped, raised
+   to the 4th power downstream) and for the raw `offset` (unclamped,
+   compounds with `flow*dt` with no natural bound). None of these change
+   the loss or what is being optimized; they only prevent float32 failure,
+   the same justification `esvr4d`'s `stabilize()` already uses. Verified
+   fixed across 5 reseeded reruns without densification and 3 with
+   densification enabled (5000 and 4000 steps respectively), all completing
+   cleanly where every one of those same seeds reliably crashed before the
+   fix.
+
+Neither bug was visible in the CPU/GPU unit tests or the synthetic smoke
+test — both are small, controlled problems that never drive the MLPs'
+outputs anywhere near these extremes. This is a caution about this
+representation specifically: shared-decoder architectures can develop
+failure modes that only appear at the scale and duration of real training.
+
+## Status
+
+Native-hyperparameter real 90-frame training in progress/pending full
+results — see a future `RESULTS.md` once available. Densification, using
+the paper's own `update_from`/`update_until`/`densify_grad_threshold`
+window, no longer crashes (verified above) but has not yet been evaluated
+for reconstruction quality on real data the way `esvr4d`'s own
+densification was (that investigation found it net-harmful even after
+similar fixes, on that different representation).
