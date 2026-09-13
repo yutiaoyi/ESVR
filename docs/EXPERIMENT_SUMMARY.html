@@ -1,0 +1,625 @@
+<title>ESVR Time-Varying Extensions</title>
+<style>
+  :root {
+    --bg: #f2f4f7;
+    --surface: #ffffff;
+    --ink: #1b2129;
+    --ink-soft: #4a5261;
+    --ink-faint: #7c8494;
+    --line: #dde2e8;
+    --line-strong: #c4cbd4;
+    --accent: #c15a17;
+    --accent-soft: #fbe9dc;
+    --verified: #2f7a63;
+    --verified-soft: #e3f2ec;
+    --superseded: #93743a;
+    --superseded-soft: #f3ecdd;
+    --progress: #3f6ea8;
+    --progress-soft: #e4edf7;
+    --mono-bg: #eef1f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14171c;
+      --surface: #1b1f26;
+      --ink: #e9ecf1;
+      --ink-soft: #b3bac6;
+      --ink-faint: #7c8494;
+      --line: #2b313b;
+      --line-strong: #3a4149;
+      --accent: #e08a4f;
+      --accent-soft: #3a2a1d;
+      --verified: #5cb89b;
+      --verified-soft: #1c3931;
+      --superseded: #c9ae74;
+      --superseded-soft: #362f1f;
+      --progress: #7aa5d9;
+      --progress-soft: #1f2e42;
+      --mono-bg: #21262e;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14171c;
+    --surface: #1b1f26;
+    --ink: #e9ecf1;
+    --ink-soft: #b3bac6;
+    --ink-faint: #7c8494;
+    --line: #2b313b;
+    --line-strong: #3a4149;
+    --accent: #e08a4f;
+    --accent-soft: #3a2a1d;
+    --verified: #5cb89b;
+    --verified-soft: #1c3931;
+    --superseded: #c9ae74;
+    --superseded-soft: #362f1f;
+    --progress: #7aa5d9;
+    --progress-soft: #1f2e42;
+    --mono-bg: #21262e;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 15px;
+    line-height: 1.65;
+    padding: 56px 20px 96px;
+  }
+  .page {
+    max-width: 900px;
+    margin: 0 auto;
+  }
+  h1, h2, h3 {
+    font-family: "Source Serif 4", "Noto Serif SC", Georgia, serif;
+    text-wrap: balance;
+    color: var(--ink);
+    font-weight: 600;
+  }
+  code, .mono, .path, .branch, td.num, .stat-value {
+    font-family: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---- Header ---- */
+  header {
+    border-bottom: 1px solid var(--line-strong);
+    padding-bottom: 28px;
+    margin-bottom: 36px;
+  }
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 10px;
+  }
+  h1 {
+    font-size: 30px;
+    margin: 0 0 8px;
+    letter-spacing: -0.01em;
+  }
+  .subhead {
+    color: var(--ink-soft);
+    font-size: 15.5px;
+    max-width: 640px;
+  }
+  .meta-row {
+    display: flex;
+    gap: 24px;
+    margin-top: 18px;
+    flex-wrap: wrap;
+    font-size: 13px;
+    color: var(--ink-faint);
+  }
+  .meta-row b { color: var(--ink-soft); font-weight: 600; }
+
+  /* ---- Overview stat strip ---- */
+  .overview {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 40px;
+  }
+  .stat {
+    background: var(--surface);
+    padding: 18px 18px 16px;
+  }
+  .stat-label {
+    font-size: 11.5px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 8px;
+  }
+  .stat-value {
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .stat-value.hero { color: var(--accent); }
+  .stat-sub {
+    font-size: 12px;
+    color: var(--ink-faint);
+    margin-top: 4px;
+  }
+
+  /* ---- Repo map ---- */
+  .repo-map {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 22px 24px 24px;
+    margin-bottom: 44px;
+  }
+  .repo-map h2 { font-size: 16px; margin: 0 0 4px; }
+  .repo-map .note { color: var(--ink-faint); font-size: 13px; margin-bottom: 16px; }
+  .repo-tree {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .repo-node {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 14px;
+    align-items: start;
+    padding: 10px 0;
+    border-top: 1px solid var(--line);
+  }
+  .repo-node:first-child { border-top: none; padding-top: 0; }
+  .repo-node .path { font-size: 13px; color: var(--ink); }
+  .repo-node .desc { font-size: 13px; color: var(--ink-soft); }
+  .repo-node .branch-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .branch-chip {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px;
+    padding: 2px 8px;
+    border-radius: 5px;
+    background: var(--mono-bg);
+    color: var(--ink-soft);
+    border: 1px solid var(--line);
+  }
+
+  /* ---- Sections ---- */
+  section.method {
+    margin-bottom: 48px;
+  }
+  .method-head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 6px;
+  }
+  .method-letter {
+    font-family: "Source Serif 4", serif;
+    font-size: 15px;
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .method-head h2 { font-size: 20px; margin: 0; }
+  .method-lineage {
+    font-size: 13px;
+    color: var(--ink-faint);
+    margin-bottom: 18px;
+  }
+  .method-lineage .arrow { color: var(--line-strong); margin: 0 4px; }
+
+  table.runs {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+  }
+  table.runs thead th {
+    text-align: left;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 600;
+    padding: 0 12px 8px;
+    border-bottom: 1px solid var(--line-strong);
+  }
+  table.runs thead th.num { text-align: right; }
+  table.runs tbody td {
+    padding: 12px 12px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  table.runs tbody tr:last-child td { border-bottom: none; }
+  table.runs tbody tr.best { background: var(--accent-soft); }
+  table.runs td.num { text-align: right; font-size: 14px; white-space: nowrap; }
+  table.runs td.desc-cell { max-width: 300px; }
+  table.runs td.scale-cell { min-width: 148px; }
+  .run-config { color: var(--ink-soft); font-size: 12.5px; margin-top: 3px; }
+  .run-config:first-child { margin-top: 0; }
+  .run-config b { color: var(--ink); font-weight: 600; }
+  .run-path { color: var(--ink-faint); font-size: 11.5px; margin-top: 4px; }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    padding: 3px 9px;
+    border-radius: 100px;
+    white-space: nowrap;
+  }
+  .pill.verified { background: var(--verified-soft); color: var(--verified); }
+  .pill.superseded { background: var(--superseded-soft); color: var(--superseded); }
+  .pill.progress { background: var(--progress-soft); color: var(--progress); }
+  .pill.dot::before {
+    content: "";
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  .callout {
+    border-left: 3px solid var(--accent);
+    background: var(--accent-soft);
+    border-radius: 0 8px 8px 0;
+    padding: 14px 18px;
+    font-size: 13.5px;
+    color: var(--ink-soft);
+    margin-top: 16px;
+  }
+  .callout b { color: var(--ink); }
+
+  footer {
+    margin-top: 56px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+    font-size: 12.5px;
+    color: var(--ink-faint);
+  }
+
+  @media (max-width: 640px) {
+    .overview { grid-template-columns: repeat(2, 1fr); }
+    .repo-node { grid-template-columns: 1fr; }
+    table.runs { display: block; overflow-x: auto; }
+  }
+</style>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Serif+SC:wght@600&display=swap">
+
+<div class="page">
+
+  <header>
+    <div class="eyebrow">ESVR · Time-Varying Reconstruction — Status Report</div>
+    <h1>三种动态场景表征融入 ESVR 的实验记录</h1>
+    <p class="subhead">
+      将 Deformable 3D Gaussians、4D Gaussian Splatting、4D Scaffold-GS 三种时变表征方法,
+      适配进 ESVR 的标量体素直接监督框架(替换各自原生的 2D 图像/相机监督)。
+      本页汇总目前已运行完成与进行中的全部真实数据实验(vorts 90 帧序列)。
+    </p>
+    <div class="meta-row">
+      <span><b>数据集</b> vorts_timevarying, 90 帧, 128³, float32</span>
+      <span><b>评测口径</b> 3D 体素 PSNR,全 90 帧参与训练(非留出测试)</span>
+      <span><b>更新时间</b> 2026-09-13</span>
+    </div>
+  </header>
+
+  <div class="overview">
+    <div class="stat">
+      <div class="stat-label">当前最佳 90 帧结果</div>
+      <div class="stat-value hero">28.90 dB</div>
+      <div class="stat-sub">Deformable-MLP,原生学习率分组修复版</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">静态单帧上限参照</div>
+      <div class="stat-value">41.77 dB</div>
+      <div class="stat-sub">ESVR 原生单帧重建(无跨帧共享)</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">已完成真实数据实验</div>
+      <div class="stat-value">13</div>
+      <div class="stat-sub">全部结果已验证,无进行中实验</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">共享基础设施修复</div>
+      <div class="stat-value">1 CUDA + 5 学习率</div>
+      <div class="stat-sub">跨方法的结构性 bug,详见各节</div>
+    </div>
+  </div>
+
+  <div class="repo-map">
+    <h2>目录与分支地图</h2>
+    <p class="note">下表所有相对路径均以各自仓库根目录为起点;“原文件夹”与“副本”是两个独立的本地 git 仓库,同名分支互不影响。</p>
+    <div class="repo-tree">
+      <div class="repo-node">
+        <div class="path">~/vis_research/esvr/<b>ESVR</b>/</div>
+        <div class="desc">原文件夹,CUDA 未修复,作为参照基线保持原样。
+          <div class="branch-list">
+            <span class="branch-chip">codex/4dgs-esvr → output/esvr_original_per_frame/</span>
+          </div>
+        </div>
+      </div>
+      <div class="repo-node">
+        <div class="path">~/vis_research/esvr/<b>ESVR-4dgs</b>/</div>
+        <div class="desc">副本,CUDA 位置梯度 bug 已修复,三个方法的主要开发与对比实验都在这里。
+          <div class="branch-list">
+            <span class="branch-chip">codex/deformable-esvr</span>
+            <span class="branch-chip">codex/4dgs-esvr</span>
+            <span class="branch-chip">codex/scaffold4d-esvr</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= A ================= -->
+  <section class="method">
+    <div class="method-head">
+      <span class="method-letter">A</span>
+      <h2>静态 ESVR 基线</h2>
+    </div>
+    <div class="method-lineage">不涉及时变表征,作为"每帧独立重建能到多好"的天花板参照</div>
+
+    <table class="runs">
+      <thead>
+        <tr><th>结果</th><th>配置 / 路径</th><th>规模 / 耗时</th><th>状态</th><th class="num">平均 PSNR</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="desc-cell">单帧 vorts0001 静态基线</td>
+          <td>
+            <div class="run-config">22400 迭代,增密剪枝,20000→21404 图元</div>
+            <div class="run-path path">output/experiments/vorts0001_baseline/</div>
+          </td>
+          <td class="scale-cell">
+            <div class="run-config"><b>36.8 s</b> 训练</div>
+            <div class="run-config">21,401 图元</div>
+            <div class="run-config">235,411 参数 · 0.92 MB(PLY)</div>
+          </td>
+          <td><span class="pill verified dot">参照</span></td>
+          <td class="num">41.77 dB</td>
+        </tr>
+        <tr>
+          <td class="desc-cell">90 帧独立原生 ESVR(逐帧各训一套)</td>
+          <td>
+            <div class="run-config">未修 CUDA,自适应增密,90 × ~21400 图元</div>
+            <div class="run-path path">ESVR/output/esvr_original_per_frame/</div>
+          </td>
+          <td class="scale-cell">
+            <div class="run-config"><b>3627.0 s</b> 总计(60.5 分钟,40.3 s/帧)</div>
+            <div class="run-config">90 × ~21,400 图元</div>
+            <div class="run-config">90 个 PLY,共 93.77 MB</div>
+          </td>
+          <td><span class="pill verified dot">参照</span></td>
+          <td class="num">41.22 dB</td>
+        </tr>
+        <tr>
+          <td class="desc-cell">90 帧独立简化 ESVR(逐帧各训一套)</td>
+          <td>
+            <div class="run-config">已修 CUDA,固定图元,简化学习率策略</div>
+            <div class="run-path path">output/esvr_per_frame_baseline/</div>
+          </td>
+          <td class="scale-cell">
+            <div class="run-config"><b>466.1 s</b> 总计(5.18 s/帧)</div>
+            <div class="run-config">90 × 30,000 图元(固定)</div>
+            <div class="run-config">836,398 参数/帧(含未启用形变网络)· 权重共 301.1 MB</div>
+          </td>
+          <td><span class="pill verified dot">参照</span></td>
+          <td class="num">38.86 dB</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="callout">
+      三行都是"每帧独立训练、互不共享参数"的结果,用来衡量共享/动态表征牺牲了多少保真度换取压缩率——不是三种时变方法的直接竞争对手。
+    </div>
+  </section>
+
+  <!-- ================= B ================= -->
+  <section class="method">
+    <div class="method-head">
+      <span class="method-letter">B</span>
+      <h2>Deformable-MLP</h2>
+    </div>
+    <div class="method-lineage">Deformable 3D Gaussians <span class="arrow">→</span> canonical 椭球 + 独立形变 MLP,监督替换为 ESVR 体素 L1/SSIM</div>
+
+    <table class="runs">
+      <thead>
+        <tr><th>版本</th><th>配置 / 路径</th><th>规模 / 耗时</th><th>状态</th><th class="num">平均 PSNR</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="desc-cell">历史基线</td>
+          <td>
+            <div class="run-config">未修 CUDA,PLY 热启动,21401 图元</div>
+            <div class="run-path path">output/dynamic/vorts90_full_geometry/</div>
+          </td>
+          <td class="scale-cell">
+            <div class="run-config"><b>431.7 s</b> · 40,000 步</div>
+            <div class="run-config">21,401 图元(固定)</div>
+            <div class="run-config">741,809 参数 · 2.83 MB</div>
+          </td>
+          <td><span class="pill superseded dot">已过时</span></td>
+          <td class="num">22.35 dB</td>
+        </tr>
+        <tr>
+          <td class="desc-cell">配置对齐版</td>
+          <td>
+            <div class="run-config">已修 CUDA,随机初始化,对齐 ESVR4D(3万图元)</div>
+            <div class="run-path path">output/dynamic/vorts90_matched_comparison/</div>
+          </td>
+          <td class="scale-cell">
+            <div class="run-config"><b>1023.2 s</b> · 40,000 步</div>
+            <div class="run-config">30,000 图元(固定)</div>
+            <div class="run-config">836,398 参数 · 3.19 MB</div>
+          </td>
+          <td><span class="pill superseded dot">仅供对比</span></td>
+          <td class="num">25.96 dB</td>
+        </tr>
+        <tr>
+          <td class="desc-cell">单变量学习率对照</td>
+          <td>
+            <div class="run-config">配置对齐 + 学习率换成原生量级,但 4 组仍合并成 1 个共享值</div>
+            <div class="run-path path">output/dynamic/vorts90_matched_native_lr/</div>
+          </td>
+          <td class="scale-cell">
+            <div class="run-config"><b>488.3 s</b> · 40,000 步</div>
+            <div class="run-config">30,000 图元(固定)</div>
+            <div class="run-config">836,398 参数 · 3.19 MB</div>
+          </td>
+          <td><span class="pill superseded dot">仅供对比</span></td>
+          <td class="num">24.21 dB</td>
+        </tr>
+        <tr class="best">
+          <td class="desc-cell"><b>原生学习率结构修复版</b></td>
+          <td>
+            <div class="run-config">position/scale/rotation/opacity 拆成 4 个独立原生学习率 + 形变网络自己的组</div>
+            <div class="run-path path">output/dynamic/vorts90_native_canonical_lr/</div>
+          </td>
+          <td class="scale-cell">
+            <div class="run-config"><b>500.3 s</b> · 40,000 步</div>
+            <div class="run-config">30,000 图元(固定)</div>
+            <div class="run-config">836,398 参数 · 3.19 MB</div>
+          </td>
+          <td><span class="pill verified dot">当前最终</span></td>
+          <td class="num">28.90 dB</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="callout">
+      <b>全仓库目前最好的真实数据结果。</b>运动主要由独立的形变网络承载(学习率此前就是对的、没动过),
+      canonical 位置/尺度/旋转恢复成 ESVR 自己验证过的保守原生学习率反而更稳;
+      canonical opacity 拿到自己更大的原生学习率(0.0075 而非共用的 0.005)是主要推测增益来源。
+    </div>
+  </section>
+
+  <!-- ================= C ================= -->
+  <section class="method">
+    <div class="method-head">
+      <span class="method-letter">C</span>
+      <h2>ESVR4D</h2>
+    </div>
+    <div class="method-lineage">4D Gaussian Splatting <span class="arrow">→</span> 原生 4D 时空协方差,条件分布产生运动,无形变网络</div>
+
+    <table class="runs">
+      <thead>
+        <tr><th>版本</th><th>配置 / 路径</th><th>规模 / 耗时</th><th>状态</th><th class="num">平均 PSNR</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="desc-cell">合并 LR 组(结构性 bug,修复前)</td>
+          <td>
+            <div class="run-config">CUDA 已修复,3 万图元,40000 步,增密关闭,xyz/time/scale/opacity 共用一个学习率</div>
+            <div class="run-path path">output/esvr4d/vorts90_fixed_points/</div>
+          </td>
+          <td class="scale-cell">
+            <div class="run-config"><b>178.9 s</b> · 40,000 步</div>
+            <div class="run-config">30,000 图元(固定,无形变网络)</div>
+            <div class="run-config">600,000 参数 · 2.29 MB</div>
+          </td>
+          <td><span class="pill superseded dot">已定位为 bug</span></td>
+          <td class="num">28.77 dB</td>
+        </tr>
+        <tr>
+          <td class="desc-cell">原生学习率结构修复版(步数未对齐)</td>
+          <td>
+            <div class="run-config">5 组原生学习率,但只跑了 30000 步——事后发现与上一行的 40000 步不可比</div>
+            <div class="run-path path">output/esvr4d/vorts90_native_lr/</div>
+          </td>
+          <td class="scale-cell">
+            <div class="run-config"><b>158.3 s</b> · 30,000 步</div>
+            <div class="run-config">30,000 图元(固定)</div>
+            <div class="run-config">600,000 参数 · 2.29 MB</div>
+          </td>
+          <td><span class="pill superseded dot">已被步数对齐版取代</span></td>
+          <td class="num">25.09 dB</td>
+        </tr>
+        <tr class="best">
+          <td class="desc-cell"><b>原生学习率结构修复版(步数对齐,当前结论)</b></td>
+          <td>
+            <div class="run-config">5 组原生学习率,步数补齐到 40000,与首行严格单变量对比;checkpoint 重载零误差复现</div>
+            <div class="run-path path">output/esvr4d/vorts90_native_lr_40k/</div>
+          </td>
+          <td class="scale-cell">
+            <div class="run-config"><b>213.0 s</b> · 40,000 步</div>
+            <div class="run-config">30,000 图元(固定)</div>
+            <div class="run-config">600,000 参数 · 2.29 MB</div>
+          </td>
+          <td><span class="pill verified dot">当前最终</span></td>
+          <td class="num">25.68 dB</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="callout">
+      <b>结论已通过干净对照验证:</b>把步数固定在同样的 40000 步后重跑,原生学习率结构确实使 PSNR 下降
+      (28.77 → 25.68 dB,真实降幅 −3.09 dB),并非步数减少造成的假象——此前 28.77 → 25.09 dB 的降幅里,
+      有约 0.6 dB 其实来自训练步数被顺带改少,已在 <code>vorts90_native_lr/RESULTS.md</code> 中更正说明。
+      与 Deformable-MLP 相反:ESVR4D 的运动直接依赖 xyz 自身移动(4D 协方差的交叉项),原生保守的位置学习率
+      (0.00016→0.0000016,比此前共用值小 30~1000 倍)明显束缚了运动表达能力,这是该方法在本项目渲染方式下
+      使用论文原生学习率的真实代价,而不是实现错误。
+    </div>
+  </section>
+
+  <!-- ================= D ================= -->
+  <section class="method">
+    <div class="method-head">
+      <span class="method-letter">D</span>
+      <h2>Scaffold4D</h2>
+    </div>
+    <div class="method-lineage">4D-Scaffold-GS <span class="arrow">→</span> 稀疏锚点 + 共享 MLP 生成子椭球,恒定速度运动模型</div>
+
+    <table class="runs">
+      <thead>
+        <tr><th>版本</th><th>配置 / 路径</th><th>规模 / 耗时</th><th>状态</th><th class="num">平均 PSNR</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="desc-cell">配置对齐版</td>
+          <td>
+            <div class="run-config">对齐 ESVR4D,但 children/feat_lr 都非论文原生值</div>
+            <div class="run-path path">output/scaffold4d/vorts90_matched_comparison/</div>
+          </td>
+          <td class="scale-cell">
+            <div class="run-config"><b>197.1 s</b> · 40,000 步</div>
+            <div class="run-config">6,000 锚点 × 5 子元(无增密,最多 3 万)</div>
+            <div class="run-config">401,148 参数 · 1.53 MB</div>
+          </td>
+          <td><span class="pill superseded dot">已标注取代</span></td>
+          <td class="num">25.03 dB</td>
+        </tr>
+        <tr class="best">
+          <td class="desc-cell"><b>原生配方版</b></td>
+          <td>
+            <div class="run-config">论文原生 7 组学习率,120000 步,增密开启(全程未崩溃)</div>
+            <div class="run-path path">output/scaffold4d/vorts90_native_recipe/</div>
+          </td>
+          <td class="scale-cell">
+            <div class="run-config"><b>725.3 s</b>(~12.1 分钟)· 120,000 步</div>
+            <div class="run-config">6,000→40,000 锚点(触达安全上限)× 10 子元,最多 40 万</div>
+            <div class="run-config">3,447,128 参数 · 13.15 MB</div>
+          </td>
+          <td><span class="pill verified dot">当前最终</span></td>
+          <td class="num">24.35 dB</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="callout">
+      过程中定位并修复了两个真实架构级 bug(透明度激活函数死区导致训练永久崩溃;最终尺度无下限导致协方差数值退化产生 NaN),
+      均已通过多组随机种子压力测试验证。三个方法中唯一在增密开启的情况下完成完整原生训练步数的。
+    </div>
+  </section>
+
+  <footer>
+    评测协议:全部实验均使用全 90 帧参与训练(非留出测试划分),PSNR 为归一化 [0,1] 值域下的 3D 体素 PSNR,
+    逐帧计算后取算术平均。每个已标记"当前最终/当前代表"的实验均已完成 checkpoint 重载一致性校验(逐字节零误差)。
+    完整配置、验证记录与详细讨论见各自目录下的 <code>RESULTS.md</code>。<br><br>
+    规模 / 耗时列:训练时长直接取自各次运行自己的训练日志(<code>train.jsonl</code>/<code>monitor.jsonl</code> 的
+    <code>seconds</code> 字段,或 <code>RESULTS.md</code> 已记录的墙钟时间),同一次训练机器(RTX 5090)。
+    参数量与模型大小从每次运行的 <code>checkpoint.pt</code> 里直接加总权重张量元素数重新计算(float32,4 字节/参数),
+    不包含 Adam 优化器的动量缓冲区(实际磁盘上 <code>checkpoint.pt</code> 文件因此会更大,仅用于断点续训,
+    不代表模型本身的大小)。
+  </footer>
+
+</div>
