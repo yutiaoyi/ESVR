@@ -89,3 +89,24 @@ DATASET_CONFIGS = {
         "transpose": False,
     }
 }
+
+# Per-frame entries for the 90-frame time-varying vorts sequence, same grid/
+# dtype/range as "vorts0001" above (byte-identical source file, confirmed via
+# sha256). Used to run the original train_chunk.py ESVR pipeline (adaptive
+# densification, per-parameter LR schedule) on each frame independently, on
+# this copy's CUDA-fixed voxelizer, with position_lr rescaled to compensate
+# (see output/experiments/vorts0001_cuda_fixed_lr_only/RESULTS.md for the
+# single-frame diagnostic this 90-frame run is based on).
+for _i in range(1, 91):
+    DATASET_CONFIGS[f"vorts_frame_{_i:04d}"] = {
+        "training_mode": "full",
+        "path": f"./data/xueliao_timevaryingdata/vorts_timevarying/vorts{_i:04d}.raw",
+        "x_voxel_size": 128,
+        "y_voxel_size": 128,
+        "z_voxel_size": 128,
+        "use_tif": False,
+        "transpose": True,
+        "dtype": "<f4",
+        "intensity_range": (-1.0, 1.0),
+    }
+del _i
