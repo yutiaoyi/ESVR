@@ -236,6 +236,25 @@
   table.runs td.num { text-align: right; font-size: 14px; white-space: nowrap; }
   table.runs td.desc-cell { max-width: 300px; }
   table.runs td.scale-cell { min-width: 148px; }
+  table.runs td.viz-cell { min-width: 200px; }
+  .viz-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: flex-start; }
+  .viz-item { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 60px; }
+  .viz-thumb {
+    display: block;
+    width: 60px; height: 60px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: var(--mono-bg);
+  }
+  .viz-thumb:hover { border-color: var(--accent); }
+  .viz-item span {
+    font-size: 10.5px;
+    color: var(--ink-faint);
+    text-align: center;
+    line-height: 1.2;
+  }
+  .viz-none { color: var(--ink-faint); font-size: 12px; font-style: italic; }
   .run-config { color: var(--ink-soft); font-size: 12.5px; margin-top: 3px; }
   .run-config:first-child { margin-top: 0; }
   .run-config b { color: var(--ink); font-weight: 600; }
@@ -320,7 +339,7 @@
     </div>
     <div class="stat">
       <div class="stat-label">已完成真实数据实验</div>
-      <div class="stat-value">14</div>
+      <div class="stat-value">15</div>
       <div class="stat-sub">全部结果已验证,无进行中实验</div>
     </div>
     <div class="stat">
@@ -365,7 +384,7 @@
 
     <table class="runs">
       <thead>
-        <tr><th>结果</th><th>配置 / 路径</th><th>规模 / 耗时</th><th>状态</th><th class="num">平均 PSNR</th></tr>
+        <tr><th>结果</th><th>配置 / 路径</th><th>规模 / 耗时</th><th>可视化</th><th>状态</th><th class="num">平均 PSNR</th></tr>
       </thead>
       <tbody>
         <tr>
@@ -378,6 +397,18 @@
             <div class="run-config"><b>36.8 s</b> 训练</div>
             <div class="run-config">21,401 图元</div>
             <div class="run-config">235,411 参数 · 0.92 MB(PLY)</div>
+          </td>
+          <td class="viz-cell">
+            <div class="viz-row">
+              <a class="viz-item" href="/_blob/1cf6c510c2e6bd35f8cc5db3d784e6af">
+                <img class="viz-thumb" src="/_blob/1cf6c510c2e6bd35f8cc5db3d784e6af" alt="质量曲线">
+                <span>曲线</span>
+              </a>
+              <a class="viz-item" href="/_blob/af43252a7412cd64b9da5f21af030145">
+                <img class="viz-thumb" src="/_blob/af43252a7412cd64b9da5f21af030145" alt="切片对比">
+                <span>切片</span>
+              </a>
+            </div>
           </td>
           <td><span class="pill verified dot">参照</span></td>
           <td class="num">41.77 dB</td>
@@ -393,8 +424,39 @@
             <div class="run-config">90 × ~21,400 图元</div>
             <div class="run-config">90 个 PLY,共 93.77 MB</div>
           </td>
+          <td class="viz-cell">
+            <div class="viz-row">
+              <a class="viz-item" href="/_blob/4ecfbd61a5c470bd6c1c202ffd6e47e8">
+                <img class="viz-thumb" src="/_blob/4ecfbd61a5c470bd6c1c202ffd6e47e8" alt="质量曲线">
+                <span>曲线</span>
+              </a>
+              <a class="viz-item" href="/_blob/2ed9fdd2fea9193826ccb8276ce88a30">
+                <img class="viz-thumb" src="/_blob/2ed9fdd2fea9193826ccb8276ce88a30" alt="切片对比">
+                <span>切片</span>
+              </a>
+              <a class="viz-item" href="/_blob/ff11d1260202feb9c15fcd41ecca3184">
+                <img class="viz-thumb" src="/_blob/ff11d1260202feb9c15fcd41ecca3184" alt="训练过程 GIF(GT｜预测｜体素误差｜图像误差)">
+                <span>GIF</span>
+              </a>
+            </div>
+          </td>
           <td><span class="pill verified dot">参照</span></td>
           <td class="num">41.22 dB</td>
+        </tr>
+        <tr class="best">
+          <td class="desc-cell"><b>90 帧独立,CUDA 修复的单变量对照</b></td>
+          <td>
+            <div class="run-config">与上一行完全相同的原生配方,仅 position 学习率按 ÷4096 补偿,90 帧全部独立训练</div>
+            <div class="run-path path">output/experiments/vorts90_cuda_fixed_lr_only/</div>
+          </td>
+          <td class="scale-cell">
+            <div class="run-config"><b>3466.2 s</b> 外部墙钟(57分46秒)· 内部计时求和 3351.7 s</div>
+            <div class="run-config">90 帧,平均 24,084 图元(22,391~26,262)</div>
+            <div class="run-config">全程无 NaN / OOM,90/90 正常退出</div>
+          </td>
+          <td class="viz-cell"><span class="viz-none">未生成</span></td>
+          <td><span class="pill verified dot">干净对照,当前结论</span></td>
+          <td class="num">39.38 dB</td>
         </tr>
         <tr>
           <td class="desc-cell">90 帧独立简化 ESVR(逐帧各训一套)</td>
@@ -406,6 +468,22 @@
             <div class="run-config"><b>466.1 s</b> 总计(5.18 s/帧)</div>
             <div class="run-config">90 × 30,000 图元(固定)</div>
             <div class="run-config">836,398 参数/帧(含未启用形变网络)· 权重共 301.1 MB</div>
+          </td>
+          <td class="viz-cell">
+            <div class="viz-row">
+              <a class="viz-item" href="/_blob/386606670ab80a889c64af900e49ce9f">
+                <img class="viz-thumb" src="/_blob/386606670ab80a889c64af900e49ce9f" alt="质量曲线">
+                <span>曲线</span>
+              </a>
+              <a class="viz-item" href="/_blob/ca7c2117afb98eccd3107c98350c23f5">
+                <img class="viz-thumb" src="/_blob/ca7c2117afb98eccd3107c98350c23f5" alt="切片对比">
+                <span>切片</span>
+              </a>
+              <a class="viz-item" href="/_blob/0f2ccf8178ea35c270061147326854bf">
+                <img class="viz-thumb" src="/_blob/0f2ccf8178ea35c270061147326854bf" alt="训练过程 GIF(GT｜预测｜体素误差｜图像误差)">
+                <span>GIF</span>
+              </a>
+            </div>
           </td>
           <td><span class="pill verified dot">参照</span></td>
           <td class="num">38.86 dB</td>
@@ -421,22 +499,68 @@
             <div class="run-config">20,000→峰值 83,546→剪枝后 22,424 图元</div>
             <div class="run-config">全程无 NaN / OOM,零发散</div>
           </td>
+          <td class="viz-cell">
+            <div class="viz-row">
+              <a class="viz-item" href="/_blob/82ed455dfb820988990eed944df57a54">
+                <img class="viz-thumb" src="/_blob/82ed455dfb820988990eed944df57a54" alt="质量曲线">
+                <span>曲线</span>
+              </a>
+              <a class="viz-item" href="/_blob/8e9011240b748efebf51702ced161e0a">
+                <img class="viz-thumb" src="/_blob/8e9011240b748efebf51702ced161e0a" alt="切片对比">
+                <span>切片</span>
+              </a>
+            </div>
+          </td>
           <td><span class="pill verified dot">干净对照</span></td>
           <td class="num">39.94 dB</td>
+        </tr>
+        <tr>
+          <td class="desc-cell">单帧,学习率+阈值都补偿(推导错误,已废弃)</td>
+          <td>
+            <div class="run-config">同上但 densify_grad_threshold 也按 ×4096 补偿——方向搞反,增密几乎完全被抑制</div>
+            <div class="run-path path">output/experiments/vorts0001_cuda_fixed_matched_lr/</div>
+          </td>
+          <td class="scale-cell">
+            <div class="run-config"><b>36.7 s</b> · 22,400 迭代</div>
+            <div class="run-config">20,000→5,409 图元(几乎只剪不增)</div>
+            <div class="run-config">无 NaN / OOM,但增密行为不正常</div>
+          </td>
+          <td class="viz-cell">
+            <div class="viz-row">
+              <a class="viz-item" href="/_blob/92e0ac6fa910ef211ce984900061b008">
+                <img class="viz-thumb" src="/_blob/92e0ac6fa910ef211ce984900061b008" alt="质量曲线">
+                <span>曲线</span>
+              </a>
+              <a class="viz-item" href="/_blob/3222ee7e6ee5931fec055facb387c099">
+                <img class="viz-thumb" src="/_blob/3222ee7e6ee5931fec055facb387c099" alt="切片对比">
+                <span>切片</span>
+              </a>
+            </div>
+          </td>
+          <td><span class="pill superseded dot">已废弃,保留作负面记录</span></td>
+          <td class="num">38.81 dB</td>
         </tr>
       </tbody>
     </table>
     <div class="callout">
-      前三行都是"每帧独立训练、互不共享参数"的结果,用来衡量共享/动态表征牺牲了多少保真度换取压缩率——不是三种时变方法的直接竞争对手。
+      <b>90 帧的干净单变量对照(高亮行)现在有了结论:</b>与"90 帧独立原生 ESVR"完全相同的配方(<code>train_chunk.py</code>
+      原生调优、自适应增密、分参数组学习率),唯一变量是 CUDA 修复 + position 学习率按 ÷4096 反向补偿,
+      90 帧全部独立训练、互不共享参数。结果 <b>41.22dB → 39.38dB,真实降幅 −1.84dB</b>,和下面单帧诊断量出来的
+      −1.83dB 几乎完全一致——两次独立测量互相印证,不是偶然。90 帧结果全部落在 38.65~39.94dB 的窄区间内,
+      没有失败帧,说明这个降幅是稳定、系统性的,不是某几帧异常拖累平均值。
       <br><br>
-      <b>关于 CUDA 修复本身的影响,前两行不能直接对比</b>——第一行(41.22dB)用的是 <code>train_chunk.py</code> 原生调优配方(自适应增密+分参数组学习率),
-      第二行(38.86dB)换了完全不同的简化训练脚本(<code>train_dynamic.py --allow-single-frame</code>,固定图元、无增密),
-      两行之间同时差了训练脚本、图元策略、迭代次数、学习率四个变量,差值不能归因于 CUDA。
-      直接把第一行的原生配方套到修复后的 CUDA 上曾经<b>训练发散、显存溢出</b>——因为原始 <code>position_lr</code>(8e-6→1e-6)是在
-      "位置梯度被压缩了 4096 倍"这个 bug 存在的前提下调出来的,梯度修正后同样的学习率相当于步长突然放大了 4096 倍。
-      最后一行是补上的单变量对照:仅把 <code>position_lr</code> 按 ÷4096 反向补偿(保持"学习率×梯度"这个有效更新幅度不变),
-      其余全部原样保留,训练稳定收敛,不再发散。<b>在这个干净对照下,CUDA 修复让单帧静态重建从 41.77dB 降到 39.94dB,真实降幅 −1.83dB。</b>
-      详见 <code>output/experiments/vorts0001_cuda_fixed_lr_only/RESULTS.md</code>(其中还记录了一次学习率补偿方向搞错导致图元数骤减到 5,409 的失败尝试,作为负面结果保留未删除)。
+      这一行能跑通,建立在下面这次单帧诊断的基础上——<b>直接把原生配方套到修复后的 CUDA 上会训练发散、显存溢出</b>,
+      原始 <code>position_lr</code>(8e-6→1e-6)是在"位置梯度被压缩了 4096 倍"这个 bug 存在的前提下调出来的,
+      梯度修正后同样的学习率相当于步长突然放大了 4096 倍。单帧诊断把 <code>position_lr</code> 按 ÷4096 反向补偿
+      (保持"学习率×梯度"这个有效更新幅度不变),其余全部原样保留,训练才重新稳定收敛。
+      详见 <code>output/experiments/vorts90_cuda_fixed_lr_only/RESULTS.md</code> 和
+      <code>output/experiments/vorts0001_cuda_fixed_lr_only/RESULTS.md</code>(后者还记录了一次学习率补偿方向搞错、
+      导致图元数骤减到 5,409 的失败尝试,作为负面结果保留未删除)。
+      <br><br>
+      前三行(单帧基线、90帧独立原生、90帧独立简化)都是"每帧独立训练、互不共享参数"的结果,用来衡量共享/动态表征
+      牺牲了多少保真度换取压缩率——不是三种时变方法的直接竞争对手。其中第三行(38.86dB,<code>train_dynamic.py
+      --allow-single-frame</code>)和第一行不能直接对比 CUDA 修复的影响,因为同时换了训练脚本、图元策略、迭代次数、
+      学习率四个变量——这也是为什么需要专门补跑高亮行这个真正的单变量对照。
     </div>
   </section>
 
@@ -450,7 +574,7 @@
 
     <table class="runs">
       <thead>
-        <tr><th>版本</th><th>配置 / 路径</th><th>规模 / 耗时</th><th>状态</th><th class="num">平均 PSNR</th></tr>
+        <tr><th>版本</th><th>配置 / 路径</th><th>规模 / 耗时</th><th>可视化</th><th>状态</th><th class="num">平均 PSNR</th></tr>
       </thead>
       <tbody>
         <tr>
@@ -463,6 +587,22 @@
             <div class="run-config"><b>431.7 s</b> · 40,000 步</div>
             <div class="run-config">21,401 图元(固定)</div>
             <div class="run-config">741,809 参数 · 2.83 MB</div>
+          </td>
+          <td class="viz-cell">
+            <div class="viz-row">
+              <a class="viz-item" href="/_blob/1da59057a46c6681565a573e9e0330ef">
+                <img class="viz-thumb" src="/_blob/1da59057a46c6681565a573e9e0330ef" alt="质量曲线">
+                <span>曲线</span>
+              </a>
+              <a class="viz-item" href="/_blob/03592c4e45f924b941d9e6e05925f66c">
+                <img class="viz-thumb" src="/_blob/03592c4e45f924b941d9e6e05925f66c" alt="切片对比">
+                <span>切片</span>
+              </a>
+              <a class="viz-item" href="/_blob/8c22de1e417bc3aa19790673f2476ec4">
+                <img class="viz-thumb" src="/_blob/8c22de1e417bc3aa19790673f2476ec4" alt="训练过程 GIF(GT｜预测｜体素误差｜图像误差)">
+                <span>GIF</span>
+              </a>
+            </div>
           </td>
           <td><span class="pill superseded dot">已过时</span></td>
           <td class="num">22.35 dB</td>
@@ -478,6 +618,22 @@
             <div class="run-config">30,000 图元(固定)</div>
             <div class="run-config">836,398 参数 · 3.19 MB</div>
           </td>
+          <td class="viz-cell">
+            <div class="viz-row">
+              <a class="viz-item" href="/_blob/71d739893aa9b2bf1bf9df6ceeb29c36">
+                <img class="viz-thumb" src="/_blob/71d739893aa9b2bf1bf9df6ceeb29c36" alt="质量曲线">
+                <span>曲线</span>
+              </a>
+              <a class="viz-item" href="/_blob/2475c709e5593d71be5c3983614190e0">
+                <img class="viz-thumb" src="/_blob/2475c709e5593d71be5c3983614190e0" alt="切片对比">
+                <span>切片</span>
+              </a>
+              <a class="viz-item" href="/_blob/00c5f64c5ac3f8e943d5cf4b75a995b8">
+                <img class="viz-thumb" src="/_blob/00c5f64c5ac3f8e943d5cf4b75a995b8" alt="训练过程 GIF(GT｜预测｜体素误差｜图像误差)">
+                <span>GIF</span>
+              </a>
+            </div>
+          </td>
           <td><span class="pill superseded dot">仅供对比</span></td>
           <td class="num">25.96 dB</td>
         </tr>
@@ -492,6 +648,22 @@
             <div class="run-config">30,000 图元(固定)</div>
             <div class="run-config">836,398 参数 · 3.19 MB</div>
           </td>
+          <td class="viz-cell">
+            <div class="viz-row">
+              <a class="viz-item" href="/_blob/c55233259c8430dca4cd041b8bba75a7">
+                <img class="viz-thumb" src="/_blob/c55233259c8430dca4cd041b8bba75a7" alt="质量曲线">
+                <span>曲线</span>
+              </a>
+              <a class="viz-item" href="/_blob/c9b80a1bbb867cbdb0e350c8a35b14ea">
+                <img class="viz-thumb" src="/_blob/c9b80a1bbb867cbdb0e350c8a35b14ea" alt="切片对比">
+                <span>切片</span>
+              </a>
+              <a class="viz-item" href="/_blob/6f90f7c84f73f7825feefbc6aaf09b33">
+                <img class="viz-thumb" src="/_blob/6f90f7c84f73f7825feefbc6aaf09b33" alt="训练过程 GIF(GT｜预测｜体素误差｜图像误差)">
+                <span>GIF</span>
+              </a>
+            </div>
+          </td>
           <td><span class="pill superseded dot">仅供对比</span></td>
           <td class="num">24.21 dB</td>
         </tr>
@@ -505,6 +677,22 @@
             <div class="run-config"><b>500.3 s</b> · 40,000 步</div>
             <div class="run-config">30,000 图元(固定)</div>
             <div class="run-config">836,398 参数 · 3.19 MB</div>
+          </td>
+          <td class="viz-cell">
+            <div class="viz-row">
+              <a class="viz-item" href="/_blob/0e5895490e43e534f283908bb7a4d101">
+                <img class="viz-thumb" src="/_blob/0e5895490e43e534f283908bb7a4d101" alt="质量曲线">
+                <span>曲线</span>
+              </a>
+              <a class="viz-item" href="/_blob/e13abccf212f3fe77a7a3f8a1d580563">
+                <img class="viz-thumb" src="/_blob/e13abccf212f3fe77a7a3f8a1d580563" alt="切片对比">
+                <span>切片</span>
+              </a>
+              <a class="viz-item" href="/_blob/c9777920894cbee6b4f457b9f2dbe16b">
+                <img class="viz-thumb" src="/_blob/c9777920894cbee6b4f457b9f2dbe16b" alt="训练过程 GIF(GT｜预测｜体素误差｜图像误差)">
+                <span>GIF</span>
+              </a>
+            </div>
           </td>
           <td><span class="pill verified dot">当前最终</span></td>
           <td class="num">28.90 dB</td>
@@ -528,7 +716,7 @@
 
     <table class="runs">
       <thead>
-        <tr><th>版本</th><th>配置 / 路径</th><th>规模 / 耗时</th><th>状态</th><th class="num">平均 PSNR</th></tr>
+        <tr><th>版本</th><th>配置 / 路径</th><th>规模 / 耗时</th><th>可视化</th><th>状态</th><th class="num">平均 PSNR</th></tr>
       </thead>
       <tbody>
         <tr>
@@ -541,6 +729,22 @@
             <div class="run-config"><b>178.9 s</b> · 40,000 步</div>
             <div class="run-config">30,000 图元(固定,无形变网络)</div>
             <div class="run-config">600,000 参数 · 2.29 MB</div>
+          </td>
+          <td class="viz-cell">
+            <div class="viz-row">
+              <a class="viz-item" href="/_blob/1829cb4f80317be4de9ae7591ce592b4">
+                <img class="viz-thumb" src="/_blob/1829cb4f80317be4de9ae7591ce592b4" alt="质量曲线">
+                <span>曲线</span>
+              </a>
+              <a class="viz-item" href="/_blob/6c3890172390dcf4928c77930fabff25">
+                <img class="viz-thumb" src="/_blob/6c3890172390dcf4928c77930fabff25" alt="切片对比">
+                <span>切片</span>
+              </a>
+              <a class="viz-item" href="/_blob/69cffa9790c8a56f0335a26a2374b518">
+                <img class="viz-thumb" src="/_blob/69cffa9790c8a56f0335a26a2374b518" alt="训练过程 GIF(GT｜预测｜体素误差｜图像误差)">
+                <span>GIF</span>
+              </a>
+            </div>
           </td>
           <td><span class="pill superseded dot">已定位为 bug</span></td>
           <td class="num">28.77 dB</td>
@@ -556,6 +760,22 @@
             <div class="run-config">30,000 图元(固定)</div>
             <div class="run-config">600,000 参数 · 2.29 MB</div>
           </td>
+          <td class="viz-cell">
+            <div class="viz-row">
+              <a class="viz-item" href="/_blob/2de83a4976c6bfa01200c048d0618732">
+                <img class="viz-thumb" src="/_blob/2de83a4976c6bfa01200c048d0618732" alt="质量曲线">
+                <span>曲线</span>
+              </a>
+              <a class="viz-item" href="/_blob/896e246e0b3a452611f423e4d7cfdb27">
+                <img class="viz-thumb" src="/_blob/896e246e0b3a452611f423e4d7cfdb27" alt="切片对比">
+                <span>切片</span>
+              </a>
+              <a class="viz-item" href="/_blob/9feb91c3809e6094d113744a87fe39ae">
+                <img class="viz-thumb" src="/_blob/9feb91c3809e6094d113744a87fe39ae" alt="训练过程 GIF(GT｜预测｜体素误差｜图像误差)">
+                <span>GIF</span>
+              </a>
+            </div>
+          </td>
           <td><span class="pill superseded dot">已被步数对齐版取代</span></td>
           <td class="num">25.09 dB</td>
         </tr>
@@ -569,6 +789,22 @@
             <div class="run-config"><b>213.0 s</b> · 40,000 步</div>
             <div class="run-config">30,000 图元(固定)</div>
             <div class="run-config">600,000 参数 · 2.29 MB</div>
+          </td>
+          <td class="viz-cell">
+            <div class="viz-row">
+              <a class="viz-item" href="/_blob/6b8466d126c8aad45b8e8daa7c11a619">
+                <img class="viz-thumb" src="/_blob/6b8466d126c8aad45b8e8daa7c11a619" alt="质量曲线">
+                <span>曲线</span>
+              </a>
+              <a class="viz-item" href="/_blob/598acc6bb579805d2241367fcb569dcf">
+                <img class="viz-thumb" src="/_blob/598acc6bb579805d2241367fcb569dcf" alt="切片对比">
+                <span>切片</span>
+              </a>
+              <a class="viz-item" href="/_blob/70a00c13741888125c82f013f8213697">
+                <img class="viz-thumb" src="/_blob/70a00c13741888125c82f013f8213697" alt="训练过程 GIF(GT｜预测｜体素误差｜图像误差)">
+                <span>GIF</span>
+              </a>
+            </div>
           </td>
           <td><span class="pill verified dot">当前最终</span></td>
           <td class="num">25.68 dB</td>
@@ -595,7 +831,7 @@
 
     <table class="runs">
       <thead>
-        <tr><th>版本</th><th>配置 / 路径</th><th>规模 / 耗时</th><th>状态</th><th class="num">平均 PSNR</th></tr>
+        <tr><th>版本</th><th>配置 / 路径</th><th>规模 / 耗时</th><th>可视化</th><th>状态</th><th class="num">平均 PSNR</th></tr>
       </thead>
       <tbody>
         <tr>
@@ -608,6 +844,22 @@
             <div class="run-config"><b>197.1 s</b> · 40,000 步</div>
             <div class="run-config">6,000 锚点 × 5 子元(无增密,最多 3 万)</div>
             <div class="run-config">401,148 参数 · 1.53 MB</div>
+          </td>
+          <td class="viz-cell">
+            <div class="viz-row">
+              <a class="viz-item" href="/_blob/172f693840e62a0fd2f603e286218cd6">
+                <img class="viz-thumb" src="/_blob/172f693840e62a0fd2f603e286218cd6" alt="质量曲线">
+                <span>曲线</span>
+              </a>
+              <a class="viz-item" href="/_blob/6e3ba2b6bbbe98a37eee40c490bb6ca5">
+                <img class="viz-thumb" src="/_blob/6e3ba2b6bbbe98a37eee40c490bb6ca5" alt="切片对比">
+                <span>切片</span>
+              </a>
+              <a class="viz-item" href="/_blob/eab92503f8a5bde281c2a0ffbdf02bce">
+                <img class="viz-thumb" src="/_blob/eab92503f8a5bde281c2a0ffbdf02bce" alt="训练过程 GIF(GT｜预测｜体素误差｜图像误差)">
+                <span>GIF</span>
+              </a>
+            </div>
           </td>
           <td><span class="pill superseded dot">已标注取代</span></td>
           <td class="num">25.03 dB</td>
@@ -622,6 +874,22 @@
             <div class="run-config"><b>725.3 s</b>(~12.1 分钟)· 120,000 步</div>
             <div class="run-config">6,000→40,000 锚点(触达安全上限)× 10 子元,最多 40 万</div>
             <div class="run-config">3,447,128 参数 · 13.15 MB</div>
+          </td>
+          <td class="viz-cell">
+            <div class="viz-row">
+              <a class="viz-item" href="/_blob/e7a125b68d8d036790f5ecabf7f711af">
+                <img class="viz-thumb" src="/_blob/e7a125b68d8d036790f5ecabf7f711af" alt="质量曲线">
+                <span>曲线</span>
+              </a>
+              <a class="viz-item" href="/_blob/325cd5aaa8eaa58eaa35e87f928f5e7c">
+                <img class="viz-thumb" src="/_blob/325cd5aaa8eaa58eaa35e87f928f5e7c" alt="切片对比">
+                <span>切片</span>
+              </a>
+              <a class="viz-item" href="/_blob/d7a36f8479927740d5f2714ce1fc4952">
+                <img class="viz-thumb" src="/_blob/d7a36f8479927740d5f2714ce1fc4952" alt="训练过程 GIF(GT｜预测｜体素误差｜图像误差)">
+                <span>GIF</span>
+              </a>
+            </div>
           </td>
           <td><span class="pill verified dot">当前最终</span></td>
           <td class="num">24.35 dB</td>
@@ -642,7 +910,14 @@
     <code>seconds</code> 字段,或 <code>RESULTS.md</code> 已记录的墙钟时间),同一次训练机器(RTX 5090)。
     参数量与模型大小从每次运行的 <code>checkpoint.pt</code> 里直接加总权重张量元素数重新计算(float32,4 字节/参数),
     不包含 Adam 优化器的动量缓冲区(实际磁盘上 <code>checkpoint.pt</code> 文件因此会更大,仅用于断点续训,
-    不代表模型本身的大小)。
+    不代表模型本身的大小)。<br><br>
+    可视化列:点击"曲线"/"切片"/"GIF"直接在新标签页打开对应实验自己生成的
+    <code>quality_curves.png</code>(逐帧 PSNR/MAE 曲线)、<code>slice_comparison.png</code>(GT/预测三视图切片对比)、
+    <code>training_frames_dvr.gif</code>(90 帧体渲染逐帧对比动图,GT｜预测｜体素级绝对误差｜渲染图像级绝对误差四联并排。
+    第三联是"先算体素误差再体渲染",第四联是"GT/预测各自体渲染成图后再对两张图直接做像素差"——体渲染是有损非线性合成,
+    两者不必然一致,第四联反映的是"看起来差多少",第三联反映的是"数据本身差多少"。两个误差面板都用 inferno 配色、
+    上限固定在归一化 0.1)原始文件。标注"未生成"的实验没有运行过可视化脚本
+    (多为单帧静态实验,或诊断性中间版本),不代表训练本身有问题。
   </footer>
 
 </div>
