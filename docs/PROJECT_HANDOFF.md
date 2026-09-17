@@ -48,6 +48,8 @@
 
 **⚠️ 重要:目前这三个方法分支都没有推送到任何远程仓库**(`git ls-remote origin` 只能看到 `main`)。所有工作目前只存在于这台机器的本地磁盘上。**账户迁移前必须先把这些分支推送到远程(GitHub),否则代码本身没有随"项目数据迁移"一起真正被保护起来**——这是本次交接里最高优先级的一项行动,不是可选项。
 
+**⚠️ 推送时会踩到的具体坑(2026-09-17 复查时发现,务必注意)**:`ESVR` 和 `ESVR-4dgs` 这两个本地文件夹的 `origin` 远程指向**同一个仓库**(`git@github.com:yutiaoyi/ESVR.git`),而且两边都各自有一个 `codex/4dgs-esvr` 分支、一个 `codex/deformable-esvr` 分支——已确认(`git merge-base` + 提交哈希核对)这两组同名分支共享同一个祖先提交 `3317e1c`(`ESVR-4dgs` 就是那个时间点从 `ESVR` 复制出来的),之后各自独立发展成了**互不兼容、无法快进合并的两条历史**。如果直接对两个文件夹分别执行 `git push`,`codex/4dgs-esvr` 和 `codex/deformable-esvr` 这两个分支名会在远程冲突(非快进,会被拒绝;强推则会覆盖掉其中一份历史,造成真实的数据丢失)。**推送前必须先决定名字怎么分**,比较稳妥的做法:`ESVR-4dgs` 里的三个方法分支保持原名推送(这是真正在用的开发历史);`ESVR` 文件夹自己的 `codex/4dgs-esvr`/`codex/deformable-esvr` 这两个分支(内容分别是 `output/esvr_original_per_frame/`、大部分和 `ESVR-4dgs` 早期重合的历史)推送前先本地改名(比如加前缀 `archive/esvr-original-...`),避免和 `ESVR-4dgs` 的同名分支互相覆盖。
+
 **内容归属原则**(整理分支时定下来的规则,以后新增内容也应该遵循):
 - 只依赖某一个方法自己代码(如 `train_dynamic.py`、`esvr4d/model.py`)的实验结果,只放在对应的那一个分支上。
 - 不依赖任何单一方法、三个分支都能一字不差复现的内容(比如静态 ESVR 的 CUDA 修复对照实验、跨方法的汇总报告 `docs/EXPERIMENT_SUMMARY.html`),三个分支都各放一份,保证检出任意一个分支都能看到完整记录。
