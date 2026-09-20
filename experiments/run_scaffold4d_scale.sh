@@ -23,4 +23,7 @@ case "$1" in
      run G3_K10_150k_480k --max-anchors 150000 --steps 480000 ;;
   2) run G2_K5_240k_120k --children 5 --max-anchors 240000
      run G4_K5_240k_480k --children 5 --max-anchors 240000 --steps 480000 ;;
+  # G1's monitored PSNR oscillates +-0.7 dB between late checkpoints: the
+  # natively constant LR groups never decay. Single-variable test vs G1.
+  3) run G5_K10_150k_120k_decay --max-anchors 150000 --final-lr-scale 0.01 ;;
 esac

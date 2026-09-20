@@ -159,6 +159,8 @@ def main():
     p.add_argument("--grow-hierarchy-factor", type=int, default=4, help="Native update_hierachy_factor")
     p.add_argument("--grow-depth", type=int, default=3, help="Native update_depth")
     p.add_argument("--grow-all-candidates", action="store_true", help="Native disable_partial_densify")
+    p.add_argument("--final-lr-scale", type=float, default=1.0,
+                   help="Log-linear decay of the natively constant groups (scale, feature, shape/flow MLP) to lr*scale at --steps; 1 = native (no decay). Monitored PSNR oscillates +-0.7 dB between late checkpoints without it")
     p.add_argument("--adam-eps", type=float, default=1e-15, help="Native Adam eps")
     p.add_argument("--clip-grad", type=float, default=0.0, help="Global grad-norm clip; 0 disables (native: none)")
     p.add_argument("--seed", type=int, default=42)
@@ -174,7 +176,8 @@ def main():
     if min(args.offset_lr_init, args.offset_lr_final, args.feat_lr, args.scale_lr, args.opacity_mlp_lr_init,
            args.opacity_mlp_lr_final, args.shape_mlp_lr, args.flow_mlp_lr) <= 0 or args.anchor_lr < 0:
         p.error("Invalid learning rate")
-    if (min(args.flow_scale, args.scale_floor_voxels, args.grow_voxel_size, args.adam_eps, args.sigma_max) <= 0
+    if (min(args.flow_scale, args.scale_floor_voxels, args.grow_voxel_size, args.adam_eps, args.sigma_max, args.final_lr_scale) <= 0
+            or args.final_lr_scale > 1
             or args.offset_spread < 0 or (args.child_scale_init_voxels is not None and args.child_scale_init_voxels <= 0)
             or not 0 < args.opacity_init < 1 or args.clip_grad < 0 or args.min_opacity < 0
             or not 0 < args.success_threshold <= 1 or args.grow_depth < 1 or args.grow_init_factor < 1
@@ -242,14 +245,15 @@ def main():
             {"params": model.heads["flow"].parameters(), "lr": args.flow_mlp_lr, "name": "flow_mlp"}],
             eps=args.adam_eps)
 
+    fin = args.final_lr_scale
     lr_schedule = dict(
         anchor=lambda step: expon_lr(step, args.anchor_lr, args.anchor_lr, args.steps),
         offset=lambda step: expon_lr(step, args.offset_lr_init, args.offset_lr_final, args.steps),
-        scale=lambda step: args.scale_lr,
-        feat=lambda step: args.feat_lr,
+        scale=lambda step: expon_lr(step, args.scale_lr, args.scale_lr * fin, args.steps),
+        feat=lambda step: expon_lr(step, args.feat_lr, args.feat_lr * fin, args.steps),
         opacity_mlp=lambda step: expon_lr(step, args.opacity_mlp_lr_init, args.opacity_mlp_lr_final, args.steps),
-        shape_mlp=lambda step: args.shape_mlp_lr,
-        flow_mlp=lambda step: args.flow_mlp_lr)
+        shape_mlp=lambda step: expon_lr(step, args.shape_mlp_lr, args.shape_mlp_lr * fin, args.steps),
+        flow_mlp=lambda step: expon_lr(step, args.flow_mlp_lr, args.flow_mlp_lr * fin, args.steps))
 
     optimizer = build_optimizer()
     start_step = 0
