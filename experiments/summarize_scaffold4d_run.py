@@ -115,8 +115,9 @@ def main():
     fig.savefig(run / "slice_comparison.png", dpi=120)
     plt.close(fig)
     # Four panels per frame, matching the per-frame ESVR and Deformable-MLP
-    # GIFs: GT DVR | prediction DVR | max-projected voxel |error| | pixel
-    # |error| between the two DVR images. Both error panels: inferno, 0-0.1.
+    # GIFs: GT DVR | prediction DVR | mean-projected voxel |error| | pixel
+    # |error| between the two DVR images. Both error panels: inferno, 0-0.1
+    # (a max projection saturates at ~32 dB and hides the differences).
     from experiments.render_preview import dvr
     from matplotlib import cm
     inferno = cm.get_cmap("inferno")
@@ -126,7 +127,7 @@ def main():
         gt = seq.volumes[i].numpy()
         pred = np.load(evaluation / f"frame_{i:04d}.npy")
         gt_img, pred_img = dvr(gt, 2), dvr(pred, 2)
-        voxel_err = np.flipud(np.swapaxes(np.abs(gt - pred).max(axis=2), 0, 1))
+        voxel_err = np.flipud(np.swapaxes(np.abs(gt - pred).mean(axis=2), 0, 1))
         image_err = np.abs(gt_img - pred_img).mean(-1)
         panels = [to_img(gt_img), to_img(pred_img),
                   to_img(inferno(np.clip(voxel_err / 0.1, 0, 1))[..., :3]),
@@ -134,7 +135,7 @@ def main():
         canvas = Image.new("RGB", (1024, 288), "black")
         for k, panel in enumerate(panels):
             canvas.paste(panel, (k * 256, 32))
-        ImageDraw.Draw(canvas).text((8, 8), f"Frame {seq.frames[i]['time']:g}   GT | Prediction | Voxel |error| max-projection (0-0.1) | Rendered-image |error| (0-0.1)", fill="white")
+        ImageDraw.Draw(canvas).text((8, 8), f"Frame {seq.frames[i]['time']:g}   GT | Prediction | Voxel |error| mean-projection (0-0.1) | Rendered-image |error| (0-0.1)", fill="white")
         animation.append(canvas)
     animation[0].save(run / "training_frames_dvr.gif", save_all=True, append_images=animation[1:], duration=100, loop=0)
     print(json.dumps(result, indent=2))
