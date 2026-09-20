@@ -59,7 +59,7 @@ def main():
     logs = [json.loads(line) for line in (run / "train.jsonl").read_text().splitlines()]
     result = dict(frames=len(rows), steps=checkpoint["step"], shape_xyz=list(seq.shape),
         method="scaffold4d: anchor/offset scaffold, shared MLP decoders, constant-velocity motion, no PLY export yet",
-        densification=("enabled, native window" if checkpoint["args"]["densify_from"] < checkpoint["args"]["steps"]
+        densification=("enabled, native window" if checkpoint["args"]["densify_from"] < checkpoint["args"]["densify_until"]
                        else "disabled (fixed population)"),
         training_frames=len(seq.train_indices),
         evaluation=("All frames used for training; reconstruction metrics, NOT held-out generalization"

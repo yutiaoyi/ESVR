@@ -55,7 +55,7 @@ vary with time in the official method at all.
 | `gaussian_renderer/__init__.py: generate_neural_gaussians` | Exact formulas (this is the part that matters most, verified by direct reading, not the paper prose — see "Mathematical representation" below) | Reimplemented verbatim in `scaffold4d/model.py`; one legitimate simplification: the anchor's own 8-column log-scale had a column (index 7) never read anywhere in the generation function — dropped to a clean 7 columns (3 spatial-offset-scale + 1 temporal-offset-scale + 3 final-ellipsoid-scale) |
 | `scene/gaussian_model.py: self._rotation`, `self._opacity` (per-anchor, `requires_grad_(False)`) | Created but **never read** in `generate_neural_gaussians` — appear to be vestigial fields inherited from the static-3DGS codebase this was built on | Omitted entirely; not used by upstream's own forward pass either |
 | `scripts/train_n3dv.sh` (the paper's actual reported configuration) | Enables `--temporal_opacity ours --use_flow --sigma_denom_weight`; `arguments/__init__.py`'s bare defaults (`temporal_opacity='4dgs'`, `use_flow=False`, `sigma_denom_weight=False`) are a weaker ablation, not what the paper reports | Implemented **only** the flags actually used for the paper's reported numbers: velocity-based motion, the generalized/super-Gaussian temporal opacity gate, sigma-weighted dynamic-aware growing statistics |
-| `scene/gaussian_model.py: training_statis`, `anchor_growing`, `adjust_anchor` | Hierarchical multi-depth (`update_depth`, default 3) voxel-grid growing with feature max-pooling into new cells, gradient statistic reweighted by `opacity_t · (σ·λ)^γ + weight_base` when "dynamic-aware" is active | Reused ESVR4D's already-built, already-tested split/clone/prune population-replacement machinery (`esvr4d/model.py`'s `densify()`/`replace_population()`, Adam-moment-preserving) rather than porting the multi-depth voxel-hash algorithm verbatim; the *statistic* being thresholded is this paper's `opacity_t`-weighted gradient, not ESVR4D's own xyz/time-gradient statistic — see "Densification" below for what was and wasn't ported, and why |
+| `scene/gaussian_model.py: training_statis`, `anchor_growing`, `adjust_anchor` | Hierarchical multi-depth (`update_depth`, default 3) voxel-grid growing with feature max-pooling into new cells, gradient statistic reweighted by `opacity_t · (σ·λ)^γ + weight_base` when "dynamic-aware" is active; anchors pruned when their accumulated base opacity stays below `min_opacity` | **Ported as implemented** (`ScaffoldESVR.record_statistics` / `adjust_anchors`, 2026-09-20) with one substitution: the view-space 2D gradient becomes the 3D gradient of each child's centre. An earlier version reused ESVR4D's clone/split machinery instead; that was replaced after it was found to drive the training-time capacity collapse documented in `output/scaffold4d/ablation/RESULTS.md` — see "Densification" below |
 | `train.py`: loss composition | `(1−λ_ssim)·L1 + λ_ssim·(1−SSIM) + 0.01·mean(scale.prod(dim=-1))` (a volume regularizer, encourages small ellipsoids), `λ_ssim=0.2` | Same three terms, reusing ESVR's existing L1/SSIM routine on 3D blocks exactly as the other two branches do |
 | `gaussian_renderer/__init__.py: render` (2D rasterizer, alpha-compositing, SH evaluation) | Not used | ESVR's existing scalar voxelizer (`gaussian_renderer.query`) is used instead, exactly as in the other two branches — **still no camera, no 2D rendering, no novel-view-synthesis evaluation anywhere in this branch**; supervision remains direct 3D-voxel L1/SSIM against the ground-truth volumes, the same property confirmed and discussed at length for the other two branches |
 
@@ -104,22 +104,138 @@ otherwise dominate the accumulated-gradient statistic purely by being
 visible more often. This directly targets short-lived, fast dynamic content
 for extra capacity — the paper's stated motivation.
 
-**Not ported as literally implemented**: the multi-depth (`update_depth`
-levels), voxel-hash-deduplicated, feature-max-pooling anchor-growing
-algorithm itself. Reimplementing that exactly, on top of a representation
-with no camera/2D-gradient signal to begin with, is a large amount of
-additional machinery for uncertain benefit given `codex/4dgs-esvr`'s own
-densification investigation (`docs/ESVR4D.md`) already found that
-**any** split/clone-style growing interacts badly with ESVR's *additive*
-(not alpha-composited) accumulation unless compensated, and even a partial
-fix did not fully resolve it. Instead, this branch reuses ESVR4D's already
-built, already tested, opacity-halving-compensated split/clone/prune
-population-replacement code (`esvr4d/model.py`'s `densify()`), substituting
-this method's `opacity_t`-weighted gradient statistic for ESVR4D's own
-xyz/time-gradient statistic as the growing trigger. Consistent with the
-other two branches, **densification is validated separately and disabled by
-default for the first real-data training run** until it is confirmed not to
-hurt — see the training results doc once that run exists.
+**Also ported (2026-09-20)**: the growing algorithm itself, following
+`train.py → training_statis → adjust_anchor → anchor_growing`:
+
+- Statistics (`record_statistics`): for every child visible in the query
+  (`visibility_filter`, i.e. radius > 0), accumulate `‖∂L/∂xyz_child‖ ·
+  opacity_t · σ^γ` and the weight itself (`offset_gradient_accum` /
+  `offset_denom`); per anchor, accumulate the sum of its children's base
+  opacities (`opacity_accum`) and a visit count. Kept only inside the native
+  window `start_stat < step < update_until`.
+- Growing (`adjust_anchors`, every `update_interval`): children whose
+  averaged statistic exceeds `threshold · (hierarchy_factor//2)^level` and
+  were observed often enough are voxelized on a 4D grid at three levels
+  (`voxel_size · init_factor / hierarchy_factor^level`, temporal cell = one
+  frame interval, the paper's setting); a new anchor is placed at the centre
+  of every cell not already holding an anchor, with feature = max-pool of
+  the voting children's anchor features, zero offsets, `log_offset_scale`
+  = cell size; upstream's random 50%/25%/12.5% subsampling per level is
+  kept (`--grow-all-candidates` disables it). Anchors whose accumulated base
+  opacity is below `min_opacity` × visits are pruned. Adam moments are
+  sliced/zero-padded exactly as before (`replace_population`).
+- Two ESVR-specific calibrations, both recorded in `config.json`: the
+  gradient threshold (native 2e-4 is a 2D screen-space magnitude; the 3D
+  centre gradient of a per-voxel-mean loss has p90 ≈ 4e-7 here, so the
+  default is 4e-7), and the "observed often enough" interval, scaled by the
+  block's share of the volume because a child is only observed on steps
+  whose 64³ block contains it (upstream renders full frames).
+
+Why this works under additive accumulation where clone/split did not: new
+anchors are created only in **unoccupied** cells with zeroed offsets and a
+pooled feature, never on top of an existing primitive, so insertion does
+not double any local sum. Measured effect: +1.4 dB over a fixed population
+at equal step count, and no post-window decay (`output/scaffold4d/ablation/RESULTS.md`).
+
+## Provenance map: what comes from ESVR, what from 4D-Scaffold-GS, what from neither (audit 2026-09-20)
+
+Rule applied: the *primitive* and everything the CUDA voxelizer sees is
+ESVR's (centre, covariance, one scalar intensity — no colour, no view
+dependence, no alpha compositing); everything about how primitives are
+*generated over time* is 4D-Scaffold-GS's; where 4D-Scaffold-GS relies on
+something a scalar volume does not have (camera, screen space, alpha
+compositing) the ESVR counterpart is used; anything that is in neither is
+listed as such with its justification.
+
+| Component | Ours | ESVR (`train_chunk.py`, `scene/gaussian_model.py`, `cuda_voxelizer`) | 4D-Scaffold-GS (`train.py`, `scene/gaussian_model.py`, `gaussian_renderer`) | Source used |
+|---|---|---|---|---|
+| Primitive | centre, 3 scales, quaternion, one scalar in (0,1) | same (`_xyz`, `_scaling`, `_rotation`, `_opacity`=intensity) | 3D Gaussian + RGB colour + opacity | **ESVR** |
+| Kernel / accumulation | `alpha = I·σ(5(1−dᵀΣ⁻¹d))`, cutoff `dᵀΣ⁻¹d>2`, per-voxel **sum** | same (`forward.cu`, k=5, cutoff 1.42²) | alpha compositing of 2D-projected Gaussians | **ESVR** (unchanged kernel) |
+| Supervision | random 64³ block of the GT volume at a random training frame, L1 + SSIM | random 64³ subvolume, L1 + SSIM (`lambda_dssim` 0.2) | full rendered frame vs image, L1 + SSIM (0.2) | both agree |
+| Volume regulariser `0.01·mean(∏scale)` | yes (`--lambda-vol`) | none | yes | 4D-Scaffold-GS |
+| Anchor = 4D point (xyz, t), frozen (lr 0) | yes | — | yes (`position_lr` 0) | 4D-Scaffold-GS |
+| Anchor feature 32-d, K=10 children, 4D offsets × per-anchor offset scale | yes | — | yes | 4D-Scaffold-GS |
+| Opacity / shape / velocity MLPs (2 layers, hidden 32) | yes | — | yes; colour MLP and feature bank dropped (no view) | 4D-Scaffold-GS minus view-dependent parts |
+| Opacity head activation | **sigmoid** | intensity = sigmoid(logit) | tanh, children with output ≤0 masked out | ESVR's activation; deviation from upstream documented above (tanh+mask collapsed to zero children at step ~50 with zero-initialised features) |
+| Temporal opacity `exp(−|(t−t_k)σ_k|^β)`, β=4 | yes | — | yes (`temporal_opacity ours`, `hparam_beta` 4) | 4D-Scaffold-GS |
+| Linear motion `x_k + u_k (t_k − t)` | yes | — | yes (`use_flow`) | 4D-Scaffold-GS |
+| Time-invariant scale / rotation per child | yes | — | yes | 4D-Scaffold-GS |
+| Optimizer: 7 groups, Adam eps 1e-15, log-linear decay on offset / opacity-MLP | yes | 4 groups, eps 1e-15 | yes | 4D-Scaffold-GS (eps agrees with ESVR) |
+| Densification statistic | mean over observations of ‖∂L/∂(child centre)‖ weighted by `opacity_t·σ^γ` | mean over observations of ‖∂L/∂(3D centre)‖ (`add_densification_stats`, 3D not 2D) | mean of ‖∂L/∂(2D screen position)‖ weighted by `opacity_t·σ^γ` | **ESVR's quantity** (3D centre gradient — there is no screen space) inside **4D-Scaffold-GS's weighting** |
+| Where new capacity goes | new **anchors** at centres of unoccupied 4D grid cells (16/4/1 voxel levels), feature max-pooled from voting children | clone (small) / split (large) of the primitive itself | same as ours | 4D-Scaffold-GS |
+| Grid sizes | finest cell = 1 data voxel, temporal cell = 1 frame interval | — | `voxel_size` 0.001 scene units, `t_grid_size` = frame interval | 4D-Scaffold-GS (spatial value re-expressed in voxels) |
+| Growing threshold | 4e-7 | 2.5e-7 – 1e-8 (dataset-tuned, also a 3D-gradient threshold) | 2e-4 (2D pixels) | **calibrated** to the measured 3D-gradient distribution; same order as ESVR's own thresholds, which is a useful sanity check |
+| "Observed enough" gate before a child may vote | `denom > interval·0.8·0.5`, interval scaled by the block's share of the volume | — | `offset_denom > update_interval·success_threshold·0.5` | 4D-Scaffold-GS; block scaling is ours (a child is only observed when its block is sampled) |
+| Pruning | anchors whose children's summed base intensity stays `< min_opacity` (0.005) over a check window | intensity `< 1/255` (dark pruning), out of bbox, too large, global importance `|Ω|·I·FA` keep 66% | same as ours | 4D-Scaffold-GS (nearly inactive here, see audit findings) |
+| Opacity reset | none | every `opacity_reset_interval` (ESVR relies on it heavily: every 64 iterations in the vorts recipe) | none | neither — not expressible with a shared opacity MLP |
+| Scale floor 0.5 voxel on the child's final scale | yes | none needed (init at kNN distance ≈ 3–5 voxels, scale lr 5e-5 keeps it there) | none needed (2D rasteriser dilates every Gaussian by 0.3 px, so nothing is ever gradient-free) | **neither**; the ESVR-space analogue of 3DGS's pixel dilation — a child below ~0.45 voxel touches no voxel centre, is skipped by the kernel and can never recover. Measured: −3.3 dB without it |
+| Temporal cutoff `opacity > 1e-3` for inclusion in a query | yes | kernel skips `alpha < 1/255` per voxel anyway | no hard gate | ours, efficiency only (below the kernel's own cutoff) |
+| σ clamp [1e-2, `--sigma-max`], offset clamp ±10, log-offset-scale clamp | yes | — | none | ours, float32 guardrails (nonfinite-loss crashes documented above); σ clamp at 100 is **binding** for 13–27 % of children, see findings |
+| Initial anchors | uniform random in the volume (default) or GT-intensity-sampled 4D points (`--init data`) | uniform random primitives, 20k–100k | SfM point cloud of frame 0, voxelised | neither exactly; `--init data` is the closest analogue of SfM points; measured difference 0.0 dB |
+| Initial child amplitude | 0.5 (zero bias) | 0.1 | tanh(0) = 0 → masked | measured difference 0.13 dB, kept simplest |
+| Velocity bound | tanh × `--flow-scale` (default 1) | — | tanh (1) | 4D-Scaffold-GS; measured ×8 = no gain under growing |
+| Newborn anchor children | offsets 0 (stacked), scale = cell size, feature = max-pool of voters | new primitives from clone/split carry the parent's size and intensity, and `reset_opacity` limits over-brightness | offsets 0, scale = cell size, feature max-pool | 4D-Scaffold-GS verbatim — **this is where the audit found the current defect**, see below |
+
+### What the two papers emphasise (for tuning reference)
+
+4D-Scaffold-GS (paper + `arguments/__init__.py` + `scripts/train_n3dv.sh`):
+K=10 (Table S2: 3/5/8/10 → 27.4/28.6/29.1/29.2 dB; larger K needs fewer
+anchors), β=2β′ with the |·| removed (code `hparam_beta`=4; >8 unstable),
+γ=1 (Fig. S3: larger γ moves anchors from static to dynamic regions), anchor
+grid `voxel_size` is the quality–storage knob (Fig. 5), temporal grid = one
+frame interval, feature 32, MLP 2×32, 120k iterations, λ_SSIM 0.2,
+λ_vol 0.01, growing 1,500–60,000 every 100 with threshold 2e-4,
+`update_init_factor` 16 / `update_hierachy_factor` 4 / `update_depth` 3,
+`success_threshold` 0.8, `min_opacity` 0.005, LRs inherited from
+Scaffold-GS, Adam eps 1e-15, no gradient clipping, initial points < 100k.
+
+ESVR (paper + `arguments/__init__.py` + `experiments/run_vorts0001.sh`):
+k=5 and cutoff √2 fixed (learnable k marginal), L1+SSIM with `lambda_dssim`
+0.2, 100k primitives per chunk (20k for the 128³ vorts recipe), densify by
+3D-centre gradient with dataset-tuned thresholds 1e-10–6.5e-9 (2.5e-7 for
+vorts) and `percent_dense` 0.01 (0.008), opacity reset (every 64 scans for
+vorts), dark pruning at 1/255, one global importance pruning keeping 66 %
+by `|Ω|·I·FA`, tiny learning rates (position 8e-6→1e-6, scale 5e-5,
+rotation 1e-5, intensity 7.5e-3→5e-4), Adam eps 1e-15, subvolume 64³.
+Per frame, the vorts recipe converges to ~24k primitives of 2–6 voxels
+(median geometric mean 3.4, min axis never below 0.5 voxel, anisotropy ~2),
+intensities 0.02–0.14, 41.2 dB, 1.0 MB/frame.
+
+### Audit findings (2026-09-20)
+
+1. **CUDA voxelizer verified correct through the scaffold path.** Direct
+   finite differences on the installed extension (`.venv` editable install
+   of this tree, built 2026-09-12 from the fixed source): numeric/analytic
+   position-gradient ratio 1.00 (16³) and 1.0–1.2 (128³ grid / 64³ block,
+   the training configuration) for children ≥ 1 voxel; the original
+   `ESVR/` extension gives 64 = 1/dVoxel² on the same inputs. Children
+   below ~0.45 voxel touch no voxel centre and therefore have neither an
+   analytic nor a meaningful numeric gradient — an earlier check that used
+   such children produced a spurious 64× and was discarded.
+   `tests/test_scaffold4d.py::CUDA` now asserts the ratio with a relative
+   tolerance instead of an absolute one.
+2. **Growing works, but its newborns mostly die.** Fixed-population runs
+   (`A`, `K`) end with 80–89 % of children alive and useful (7–15 voxels,
+   intensity ~0.04). Runs with growing end with only 36 % (`J`, 40k
+   anchors) and 13 % (`C`, 100k anchors) useful children; the rest are
+   below 1/255 intensity and/or pinned at the 0.5-voxel floor. Upstream's
+   newborn recipe puts all K children on one point at the cell size: under
+   additive accumulation that is a K-fold over-prediction at birth, and at
+   the finest level the cell (1 voxel) times the gate (≈0.5) *is* the
+   floor. Useful children per query at t=0.5: ~15k in `J` and ~14k in `C`
+   — the extra 60k anchors of `C` added almost nothing useful, which is why
+   the quality–size curve bends. Options under test: spread newborn
+   offsets over the cell, start children at an ESVR-like 4-voxel scale,
+   drop λ_vol (which shrinks invisible children onto the floor), floor 1.0.
+3. **σ clamp binds**: 13–27 % of children sit at σ=100 (gate half-width
+   0.8 frame). With the temporal grid at one frame this may limit how
+   sharply a child can switch off; `--sigma-max` exposed for testing.
+4. Pruning is nearly inactive (1–70 anchors per run) because sigmoid
+   children rarely fall below `min_opacity` for a whole window; anchors with
+   zero useful children are 32 % (`J`) / 48 % (`C`). An ESVR-style dark
+   pruning on *useful children per anchor* would free that budget.
+5. Anchors outside the volume: 1.4–2.5 % (grid cells straddling the
+   boundary); harmless.
 
 ## Data contract
 
@@ -235,12 +351,27 @@ outputs anywhere near these extremes. This is a caution about this
 representation specifically: shared-decoder architectures can develop
 failure modes that only appear at the scale and duration of real training.
 
-## Status
+## Status (2026-09-20)
 
-Native-hyperparameter real 90-frame training in progress/pending full
-results — see a future `RESULTS.md` once available. Densification, using
-the paper's own `update_from`/`update_until`/`densify_grad_threshold`
-window, no longer crashes (verified above) but has not yet been evaluated
-for reconstruction quality on real data the way `esvr4d`'s own
-densification was (that investigation found it net-harmful even after
-similar fixes, on that different representation).
+First native-recipe run: `output/scaffold4d/vorts90_native_recipe/RESULTS.md`,
+24.35 dB — superseded. Inspecting its checkpoint showed the model had
+degraded during training (active children 330k → 21k, PSNR peaking ~26.5 dB
+at step 30k and falling to 24.3), with half of all children pinned on the
+1e-4 scale floor (too small to touch any voxel centre, hence permanently
+gradient-free) and 14k of 40k anchors fully transparent but never pruned.
+
+Fixes and a nine-run leave-one-out ablation are documented in
+`output/scaffold4d/ablation/RESULTS.md`. Current numbers at 120,000 steps:
+**31.9 dB** with 40,000 anchors (13.3 MB), **32.2 dB** with 100,000 anchors
+(33 MB), **30.0 dB** with 6,000 fixed anchors and no growing (2.0 MB). The
+scale floor (now 0.5 voxels) and the growing port account for the gain;
+velocity bound, initial amplitude, data-driven initialization and the σ^γ
+weight were each measured and found not to matter beyond ~0.5 dB on this
+data, so their defaults follow the native/simplest setting. Across three
+seeds the 40,000-anchor configuration is **31.6 ± 0.3–0.4 dB** (seed spread
+up to 0.8 dB, which bounds what any single-run comparison can claim).
+
+Still open: held-out time split (never done on any branch); a size-matched
+comparison against the other two branches; byte-exact reload check of the
+new runs; RetimeGS/MoDec-GS-style multi-segment motion as a possible next
+representation step.

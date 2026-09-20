@@ -1,5 +1,12 @@
 # ESVR-Scaffold4D — native 4D-Scaffold-GS hyperparameters, real 90-frame data
 
+> **Superseded (2026-09-20)** by [output/scaffold4d/ablation/RESULTS.md](../ablation/RESULTS.md).
+> This run's 24.35 dB came from a model that degraded during training
+> (active children 330k → 21k; half of all children pinned on the 1e-4
+> scale floor and permanently gradient-free; 14k/40k anchors transparent
+> but never pruned; growing was a clone/split routine, not the paper's
+> anchor growing). Same recipe with those fixed: 31.9 dB at 40k anchors.
+
 > **What this run is**: uses 4D-Scaffold-GS's own hyperparameters
 > (`train_scaffold4d.py`'s current defaults, all sourced from
 > `arguments/__init__.py` and `scripts/train_n3dv.sh` in the pinned upstream

@@ -3,8 +3,10 @@
 
 No RGB, view-dependent color, feature bank, or camera supervision. Motion is
 the paper's own design: constant per-child velocity around a per-child home
-time, gated by a temporal opacity window. See docs/ESVR_SCAFFOLD4D.md for the
-source-reading map and deliberate differences from upstream.
+time, gated by a temporal opacity window. Anchor growing/pruning follows
+upstream's `training_statis`/`anchor_growing`/`adjust_anchor` with the
+view-space 2D gradient replaced by the 3D gradient of each child's centre
+(ESVR has no camera). See docs/ESVR_SCAFFOLD4D.md.
 """
 import math
 from types import SimpleNamespace
@@ -21,39 +23,92 @@ def normalize_quaternion(q):
     return torch.where(norm > 1e-8, q / norm.clamp_min(1e-8), identity)
 
 
+def inverse_sigmoid(x):
+    return math.log(x / (1 - x))
+
+
+def voxel_centers(shape, index):
+    """ESVR coordinate convention (gaussian_renderer.query / query_block):
+    voxel i of an axis of length s sits at (i + 0.5 - s/2) * 2/max(shape)."""
+    step = 2 / max(shape)
+    return (index.double() + 0.5 - torch.tensor(shape, dtype=torch.double, device=index.device) / 2) * step
+
+
+@torch.no_grad()
+def anchors_from_sequence(sequence, count, voxel_size, t_size, generator=None):
+    """Upstream initialises anchors from an SfM point cloud voxelised on a 4D
+    grid (create_from_pcd/voxelize_sample). Volumes have no point cloud, but
+    the ground truth itself says where structure is: sample voxel centres with
+    probability proportional to intensity, spread over all training frames
+    (each sample carries its frame's time), then dedupe on the same 4D grid."""
+    frames = sequence.train_indices
+    per_frame = [count // len(frames) + (1 if i < count % len(frames) else 0) for i in range(len(frames))]
+    points = []
+    for index, n in zip(frames, per_frame):
+        if n == 0:
+            continue
+        volume = sequence.volumes[index]
+        weights = volume.reshape(-1).double().clamp_min(0)
+        if weights.sum() <= 0:
+            weights = torch.ones_like(weights)
+        flat = torch.multinomial(weights, n, replacement=False, generator=generator)
+        index3 = torch.stack(torch.unravel_index(flat, sequence.shape), -1)
+        xyz = voxel_centers(sequence.shape, index3)
+        t = torch.full((n, 1), float(sequence.times[index]), dtype=torch.double)
+        points.append(torch.cat([xyz, t], -1))
+    points = torch.cat(points, 0)
+    grid = torch.cat([torch.round(points[:, :3] / voxel_size), torch.round(points[:, 3:] / t_size)], -1)
+    grid = torch.unique(grid, dim=0)
+    return torch.cat([grid[:, :3] * voxel_size, grid[:, 3:] * t_size], -1).float()
+
+
 class ScaffoldESVR(nn.Module):
     def __init__(self, anchors=5000, children=5, shape=(128, 128, 128), feat_dim=32,
-                 hidden=32, temporal_beta=4.0, temporal_cutoff=1e-3):
+                 hidden=32, temporal_beta=4.0, temporal_cutoff=1e-3, flow_scale=1.0,
+                 scale_floor=1e-4, opacity_init=0.5, anchor_init=None, sigma_max=1e2,
+                 offset_spread=0.0, child_scale_init=None):
         super().__init__()
         if anchors < 1 or children < 1 or len(shape) != 3 or min(shape) < 1:
             raise ValueError("Invalid anchor/children count or XYZ shape")
         if temporal_beta <= 0 or not 0 <= temporal_cutoff < 1:
             raise ValueError("Invalid temporal_beta or temporal_cutoff")
+        if flow_scale <= 0 or scale_floor <= 0 or not 0 < opacity_init < 1:
+            raise ValueError("Invalid flow_scale, scale_floor or opacity_init")
+        if sigma_max <= 1e-2 or offset_spread < 0 or (child_scale_init is not None and child_scale_init <= 0):
+            raise ValueError("Invalid sigma_max, offset_spread or child_scale_init")
+        if anchor_init is not None:
+            anchors = len(anchor_init)
         self.config = dict(anchors=anchors, children=children, shape=list(shape),
                            feat_dim=feat_dim, hidden=hidden, temporal_beta=temporal_beta,
-                           temporal_cutoff=temporal_cutoff)
+                           temporal_cutoff=temporal_cutoff, flow_scale=flow_scale,
+                           scale_floor=scale_floor, opacity_init=opacity_init, sigma_max=sigma_max,
+                           offset_spread=offset_spread, child_scale_init=child_scale_init)
         extent = torch.tensor(shape) / max(shape)
-        self.anchor = nn.Parameter(torch.cat([
-            (torch.rand(anchors, 3) * 2 - 1) * extent,
-            torch.rand(anchors, 1),
-        ], -1))
+        if anchor_init is None:
+            anchor_init = torch.cat([(torch.rand(anchors, 3) * 2 - 1) * extent, torch.rand(anchors, 1)], -1)
+            spatial = torch.full((anchors,), (float((2 * extent).prod()) / anchors) ** (1 / 3) * 0.5)
+        else:
+            # Upstream: offset/final scale start at each anchor's nearest-neighbour distance.
+            d = torch.cdist(anchor_init[:, :3], anchor_init[:, :3])
+            d.fill_diagonal_(float("inf"))
+            spatial = d.min(1).values.clamp(1e-3, 1.0)
+        self.anchor = nn.Parameter(anchor_init.clone().float())
         self.anchor_feat = nn.Parameter(torch.zeros(anchors, feat_dim))
-        spatial_offset_scale = (float((2 * extent).prod()) / anchors) ** (1 / 3) * 0.5
-        self.log_offset_scale = nn.Parameter(torch.tensor(
-            [math.log(spatial_offset_scale)] * 3 + [math.log(0.1)] + [math.log(spatial_offset_scale)] * 3
-        ).expand(anchors, 7).contiguous())
-        self.offset = nn.Parameter(torch.zeros(anchors, children, 4))
+        log_spatial = spatial.log()[:, None]
+        # child_scale_init: ESVR initialises every primitive at its
+        # nearest-neighbour distance and barely changes it (scale lr 5e-5);
+        # upstream instead starts children at the anchor's own offset scale.
+        log_child = log_spatial if child_scale_init is None else torch.full((anchors, 1), math.log(child_scale_init))
+        self.log_offset_scale = nn.Parameter(torch.cat([
+            log_spatial.expand(-1, 3), torch.full((anchors, 1), math.log(0.1)), log_child.expand(-1, 3)], 1).contiguous())
+        self.offset = nn.Parameter(self._initial_offsets(anchors))
         self.heads = nn.ModuleDict({
             # Sigmoid, not upstream's Tanh-then-hard-mask-at-zero: with every
             # anchor starting from an identical zero feature, a Tanh-masked
             # opacity has EXACTLY zero gradient once a child's raw output
             # goes negative, and empirically every child in a freshly
             # initialized model crosses zero together within ~50 steps and
-            # never recovers (verified: all 1024 children active at step 1,
-            # 0 active from step 50 onward, loss frozen for the rest of
-            # training). Sigmoid has no such dead zone, matching the
-            # opacity/scalar activation already used by dynamic_esvr and
-            # esvr4d in this repository.
+            # never recovers. Sigmoid has no such dead zone.
             "opacity": nn.Sequential(nn.Linear(feat_dim, hidden), nn.ReLU(True),
                                      nn.Linear(hidden, children)),
             "shape": nn.Sequential(nn.Linear(feat_dim, hidden), nn.ReLU(True),
@@ -61,46 +116,47 @@ class ScaffoldESVR(nn.Module):
             "flow": nn.Sequential(nn.Linear(feat_dim, hidden), nn.ReLU(True),
                                   nn.Linear(hidden, children * 3), nn.Tanh()),
         })
-        self.register_buffer("grad_accum", torch.zeros(anchors))
-        self.register_buffer("weight_accum", torch.zeros(anchors))
-        self.register_buffer("observations", torch.zeros(anchors))
+        with torch.no_grad():
+            # ESVR sums contributions instead of alpha-compositing, so the
+            # initial per-child amplitude sets the initial over-prediction
+            # directly; 0.1 is both ESVR's and upstream's own opacity init.
+            self.heads["opacity"][-1].bias.fill_(inverse_sigmoid(opacity_init))
+        n = anchors * children
+        self.register_buffer("child_grad_accum", torch.zeros(n), persistent=False)
+        self.register_buffer("child_denom", torch.zeros(n), persistent=False)
+        self.register_buffer("anchor_opacity_accum", torch.zeros(anchors), persistent=False)
+        self.register_buffer("anchor_denom", torch.zeros(anchors), persistent=False)
+
+    def _initial_offsets(self, n, device=None):
+        # Upstream starts all K children of an anchor at zero offset, i.e.
+        # stacked on one point. Under alpha compositing K stacked children
+        # saturate; under ESVR's additive accumulation they sum to K times
+        # the intensity, so an optional uniform spread over the cell exists.
+        offsets = torch.zeros(n, self.config["children"], 4, device=device)
+        if self.config["offset_spread"]:
+            offsets[..., :3].uniform_(-self.config["offset_spread"], self.config["offset_spread"])
+        return offsets
 
     def generate(self):
         """Per-anchor MLP decode; independent of query time. Shapes: (N, K, ...)."""
         n, k = len(self.anchor), self.config["children"]
         opacity_raw = self.heads["opacity"](self.anchor_feat).view(n, k, 1)
         shape_out = self.heads["shape"](self.anchor_feat).view(n, k, 8)
-        flow = self.heads["flow"](self.anchor_feat).view(n, k, 3)
+        # tanh bounds the velocity to 1 normalised unit per unit time; with
+        # time normalised to [0,1] over the whole sequence that is far below
+        # the measured motion of real data, so the bound is rescaled.
+        flow = self.heads["flow"](self.anchor_feat).view(n, k, 3) * self.config["flow_scale"]
         offset_scale = self.log_offset_scale.exp()
         home_xyz = self.anchor[:, None, :3] + self.offset[..., :3] * offset_scale[:, None, :3]
         home_t = self.anchor[:, None, 3:4] + self.offset[..., 3:4] * offset_scale[:, None, 3:4]
-        # Root cause of the nonfinite-loss crash (confirmed across 4 seeded
-        # runs, each catching it at a different step: pred itself was
-        # already NaN, and scale had collapsed to ~1e-9..1e-10 every time).
-        # The final scale is offset_scale (floored at 1e-4 by stabilize())
-        # TIMES sigmoid(shape_gate), and sigmoid has no floor -- it can
-        # approach 0 as closely as the MLP output goes negative, so the
-        # product has no real floor at all. A near-zero scale in any axis
-        # makes that ellipsoid's covariance numerically singular in the
-        # CUDA voxelizer (determinant near 0, its inverse blows up), which
-        # is exactly the kind of value that turns an ordinary-looking
-        # inf*0 or inf-inf into NaN. Floored directly on the product, not
-        # just on offset_scale, since clamping only the input to a
-        # multiplication doesn't bound the output.
-        scale = (offset_scale[:, None, 4:7] * shape_out[..., :3].sigmoid()).clamp_min(1e-4)
+        # Floor on the final product (offset_scale * sigmoid gate): a scale
+        # small enough to touch no voxel centre is skipped by the voxelizer,
+        # gets no gradient, and can never recover on its own; a near-singular
+        # covariance also produced NaN in the CUDA kernel.
+        scale = (offset_scale[:, None, 4:7] * shape_out[..., :3].sigmoid()).clamp_min(self.config["scale_floor"])
         rotation = normalize_quaternion(shape_out[..., 4:8])
-        # Numerical guardrail, not part of the paper's objective (matches
-        # the spirit of esvr4d's stabilize()): sigma is an unclamped MLP
-        # output raised to a 4th power downstream (temporal_beta). A
-        # 40000+-step real-data run hit a nonfinite loss at a different step
-        # on every otherwise-identical seeded rerun -- a float32 precision
-        # cascade through CUDA atomics, not a fixed logic bug -- traced to
-        # sigma drifting toward extremes with no bound in either direction
-        # (near 0: almost every child stays "on" at almost every time,
-        # summing enormous overlapping contributions since ESVR's voxelizer
-        # adds rather than alpha-composites; very large: dt*sigma overflows
-        # under the 4th power). Clamped to a wide but safe range.
-        sigma = (F.elu(shape_out[..., 3:4]) + 1).clamp(1e-2, 1e2)
+        # Numerical guardrail: sigma is raised to the 4th power downstream.
+        sigma = (F.elu(shape_out[..., 3:4]) + 1).clamp(1e-2, self.config["sigma_max"])
         return SimpleNamespace(opacity_raw=opacity_raw, home_xyz=home_xyz, home_t=home_t,
                                scale=scale, rotation=rotation, sigma=sigma, flow=flow)
 
@@ -109,55 +165,55 @@ class ScaffoldESVR(nn.Module):
         timestamp = torch.as_tensor(timestamp, device=self.anchor.device, dtype=self.anchor.dtype)
         dt = g.home_t - timestamp
         opacity_t = torch.exp(-(dt * g.sigma).abs().pow(self.config["temporal_beta"]))
-        opacity = g.opacity_raw.sigmoid() * opacity_t
+        opacity_base = g.opacity_raw.sigmoid()
+        opacity = opacity_base * opacity_t
         xyz = g.home_xyz + g.flow * dt
         # Inclusion in this particular CUDA query is an efficiency cutoff,
         # not a permanent gate: sigmoid(opacity_raw) always has a nonzero
-        # gradient, so a child below cutoff now can still recover later
-        # (through its anchor's shared feature, updated by its siblings).
+        # gradient, so a child below cutoff now can still recover later.
         mask = opacity[..., 0] > self.config["temporal_cutoff"]
-        flat = lambda t: t.reshape(-1, t.shape[-1])[mask.reshape(-1)]
+        flat_mask = mask.reshape(-1)
+        flat = lambda t: t.reshape(-1, t.shape[-1])[flat_mask]
         selected_xyz = flat(xyz)
         if selected_xyz.requires_grad:
             selected_xyz.retain_grad()
-        return SimpleNamespace(get_xyz=selected_xyz, get_scaling=flat(g.scale),
-            get_rotation=flat(g.rotation), get_opacity=flat(opacity), mask=mask,
-            opacity_t=flat(opacity_t),
-            anchor_index=torch.arange(len(self.anchor), device=self.anchor.device)
-                .unsqueeze(1).expand(-1, self.config["children"]).reshape(-1)[mask.reshape(-1)])
+        return SimpleNamespace(
+            get_xyz=selected_xyz, get_scaling=flat(g.scale), get_rotation=flat(g.rotation),
+            get_opacity=flat(opacity), mask=mask, opacity_t=flat(opacity_t), sigma=flat(g.sigma),
+            child_index=flat_mask.nonzero().flatten(),
+            anchor_opacity_sum=opacity_base.detach().sum((1, 2)))
 
     @torch.no_grad()
     def stabilize(self):
         self.log_offset_scale.clamp_(math.log(1e-4), math.log(10))
-        # get_xyz is home_xyz (a function of `offset`) plus flow*dt; dt has
-        # no natural bound (unlike static offsets, a child's home time can
-        # drift arbitrarily far from [0,1] with no clock to reset it), and
-        # an unbounded offset let dt grow large enough to contribute to the
-        # same nonfinite-loss cascade sigma's clamp above addresses.
+        # dt has no natural bound: an unbounded offset let a child's home
+        # time drift arbitrarily far and feed the nonfinite-loss cascade.
         self.offset.clamp_(-10, 10)
 
     @torch.no_grad()
-    def record_gradients(self, sliced, visibility):
+    def record_statistics(self, sliced, visibility, lambda_temporal_sigma=1.0):
+        """Upstream training_statis: per-child gradient weighted by
+        opacity_t * sigma^gamma (dynamic-aware, sigma_denom_weight on), and
+        per-anchor base-opacity sums for pruning."""
+        self.anchor_opacity_accum += sliced.anchor_opacity_sum
+        self.anchor_denom += 1
         if sliced.get_xyz.grad is None:
             return
         grad = sliced.get_xyz.grad[visibility].norm(dim=-1)
-        weight = sliced.opacity_t[visibility].reshape(-1).clamp_min(0)
-        indices = sliced.anchor_index[visibility]
-        self.grad_accum.scatter_add_(0, indices, grad * weight)
-        self.weight_accum.scatter_add_(0, indices, weight)
-        touched = torch.unique(indices)
-        self.observations.scatter_add_(0, touched, torch.ones_like(touched, dtype=torch.float))
+        weight = sliced.opacity_t[visibility].reshape(-1) * sliced.sigma[visibility].reshape(-1).pow(lambda_temporal_sigma)
+        index = sliced.child_index[visibility]
+        self.child_grad_accum.index_add_(0, index, grad * weight)
+        self.child_denom.index_add_(0, index, weight)
 
     population_params = ("anchor", "anchor_feat", "offset", "log_offset_scale")
 
     @torch.no_grad()
-    def replace_population(self, optimizer, keep, children_dict):
+    def replace_population(self, optimizer, keep, extra):
         # Only anchor/child tensors are indexed by population size; the
         # shared MLP heads are fixed-size networks, not per-anchor data.
         for name in self.population_params:
             old = getattr(self, name)
-            extra = children_dict[name]
-            new = nn.Parameter(torch.cat((old[keep], extra), 0))
+            new = nn.Parameter(torch.cat((old[keep], extra[name].to(old)), 0))
             for group in optimizer.param_groups:
                 for i, value in enumerate(group["params"]):
                     if value is old:
@@ -165,50 +221,88 @@ class ScaffoldESVR(nn.Module):
             state = optimizer.state.pop(old, {})
             for key, value in state.items():
                 if torch.is_tensor(value) and value.shape == old.shape:
-                    state[key] = torch.cat((value[keep], torch.zeros_like(extra)), 0)
+                    state[key] = torch.cat((value[keep], torch.zeros_like(extra[name], device=value.device)), 0)
             if state:
                 optimizer.state[new] = state
             setattr(self, name, new)
-        n = len(self.anchor)
-        self.config["anchors"] = n
-        for name in ("grad_accum", "weight_accum", "observations"):
-            setattr(self, name, self.anchor.new_zeros(n))
+        self.config["anchors"] = len(self.anchor)
+
+    @staticmethod
+    def _grid(points4d, size, t_size):
+        return torch.cat([torch.round(points4d[:, :3] / size), torch.round(points4d[:, 3:4] / t_size)], 1).long()
 
     @torch.no_grad()
-    def densify(self, optimizer, grad_threshold=2e-4, max_anchors=50000, spatial_size=0.02,
-                temporal_size=0.2, min_children_active=1):
-        denom = self.weight_accum.clamp_min(1e-8)
-        grads = (self.grad_accum / denom).nan_to_num(0.0)
-        active = self.observations > 0
-        scales = self.log_offset_scale.exp()
-        large = (scales[:, 4:7].amax(-1) > spatial_size) | (scales[:, 3] > temporal_size)
-        candidates = ((grads >= grad_threshold) & active).nonzero().flatten()
-        budget = max(0, max_anchors - len(self.anchor))
-        candidates = candidates[grads[candidates].argsort(descending=True)[:budget]]
-        splits = candidates[large[candidates]]
-        clones = candidates[~large[candidates]]
-        parents = torch.cat((splits.repeat_interleave(2), clones))
-        keep = torch.ones(len(self.anchor), dtype=torch.bool, device=self.anchor.device)
-        children_dict = {name: getattr(self, name)[parents].clone() for name in self.population_params}
-        count = len(splits) * 2
-        if count:
-            sample = torch.randn_like(children_dict["anchor"][:count]) * scales[parents[:count], 4:7].mean(-1, keepdim=True).expand(-1, 4)
-            children_dict["anchor"][:count] += sample
-            children_dict["log_offset_scale"][:count] -= math.log(1.6)
-            keep[splits] = False
-        if len(parents):
-            # ESVR's voxelizer sums scalar contributions rather than alpha-
-            # compositing (see docs/ESVR4D.md); halve each new anchor's
-            # opacity head bias contribution indirectly is not possible
-            # (opacity comes from a shared MLP, not a per-anchor scalar), so
-            # instead halve the *feature* magnitude feeding the opacity head
-            # as an approximate compensation, consistent in spirit with
-            # ESVR4D's split/clone opacity halving.
-            children_dict["anchor_feat"] *= 0.5
-        before = len(self.anchor)
-        self.replace_population(optimizer, keep, children_dict)
-        return dict(before=before, after=len(self.anchor), split=len(splits), cloned=len(clones),
-                    pruned=before - int(keep.sum()) - len(splits))
+    def adjust_anchors(self, optimizer, check_interval=100, success_threshold=0.8, grad_threshold=2e-4,
+                       min_opacity=0.005, voxel_size=2 / 128, t_size=1 / 89, init_factor=16,
+                       hierarchy_factor=4, depth=3, max_anchors=40000, partial=True):
+        """Upstream adjust_anchor: multi-level voxel-grid anchor growing from
+        sufficiently observed, high-gradient children, then pruning of anchors
+        whose children stayed near-transparent."""
+        n, k = len(self.anchor), self.config["children"]
+        grads = (self.child_grad_accum / self.child_denom).nan_to_num(0.0)
+        observed = self.child_denom > check_interval * success_threshold * 0.5
+        checked = self.anchor_denom > check_interval * success_threshold
+        prune = (self.anchor_opacity_accum < min_opacity * self.anchor_denom) & checked
+        g = self.generate()
+        child4d = torch.cat([g.home_xyz, g.home_t], -1).reshape(-1, 4)
+        child_feat = self.anchor_feat.repeat_interleave(k, 0)
+        new = dict(anchor=[], anchor_feat=[], offset=[], log_offset_scale=[])
+        added = 0
+        budget = max(0, max_anchors - (n - int(prune.sum())))
+        for level in range(depth):
+            threshold = grad_threshold * (hierarchy_factor // 2) ** level
+            candidate = (grads >= threshold) & observed
+            if partial:
+                candidate &= torch.rand_like(grads) > 0.5 ** (level + 1)
+            if budget - added <= 0 or not candidate.any():
+                continue
+            size = voxel_size * (init_factor // hierarchy_factor ** level)
+            existing = torch.cat([self.anchor] + new["anchor"]) if new["anchor"] else self.anchor
+            existing_cells = self._grid(existing, size, t_size)
+            selected = candidate.nonzero().flatten()
+            selected_cells = self._grid(child4d[selected], size, t_size)
+            cells, inverse = torch.unique(torch.cat([existing_cells, selected_cells]), dim=0, return_inverse=True)
+            occupied = torch.zeros(len(cells), dtype=torch.bool, device=cells.device)
+            occupied[inverse[:len(existing_cells)]] = True
+            cell_of_selected = inverse[len(existing_cells):]
+            fresh = ~occupied
+            if not fresh.any():
+                continue
+            # Feature of a new anchor: max-pool over the children that voted
+            # for its cell (upstream scatter_max); rank cells by their
+            # strongest vote so a finite anchor budget goes to the worst areas.
+            feat = torch.zeros(len(cells), child_feat.shape[1], device=cells.device).scatter_reduce_(
+                0, cell_of_selected[:, None].expand(-1, child_feat.shape[1]), child_feat[selected], "amax", include_self=False)
+            vote = torch.zeros(len(cells), device=cells.device).scatter_reduce_(
+                0, cell_of_selected, grads[selected], "amax", include_self=False)
+            order = fresh.nonzero().flatten()
+            order = order[vote[order].argsort(descending=True)[:budget - added]]
+            cells = cells[order].float()
+            m = len(order)
+            new["anchor"].append(torch.cat([cells[:, :3] * size, cells[:, 3:4] * t_size], 1))
+            new["anchor_feat"].append(feat[order])
+            new["offset"].append(self._initial_offsets(m, cells.device))
+            child = size if self.config["child_scale_init"] is None else self.config["child_scale_init"]
+            new["log_offset_scale"].append(torch.tensor(
+                [math.log(size)] * 3 + [math.log(t_size)] + [math.log(child)] * 3, device=cells.device).expand(m, 7).contiguous())
+            added += m
+        extra = {name: (torch.cat(v) if v else getattr(self, name)[:0]) for name, v in new.items()}
+        keep = ~prune
+        # Upstream resets the statistics only of children/anchors that were
+        # actually checked this round; the rest keep accumulating.
+        self.child_grad_accum[observed] = 0
+        self.child_denom[observed] = 0
+        self.anchor_opacity_accum[checked] = 0
+        self.anchor_denom[checked] = 0
+        child_keep = keep.repeat_interleave(k)
+        self.child_grad_accum = torch.cat([self.child_grad_accum[child_keep], self.child_grad_accum.new_zeros(added * k)])
+        self.child_denom = torch.cat([self.child_denom[child_keep], self.child_denom.new_zeros(added * k)])
+        self.anchor_opacity_accum = torch.cat([self.anchor_opacity_accum[keep], self.anchor_opacity_accum.new_zeros(added)])
+        self.anchor_denom = torch.cat([self.anchor_denom[keep], self.anchor_denom.new_zeros(added)])
+        self.replace_population(optimizer, keep, extra)
+        return dict(before=n, after=len(self.anchor), grown=added, pruned=int(prune.sum()),
+                    observed_children=int(observed.sum()), grad_p50=float(grads[observed].median()) if observed.any() else 0.0,
+                    grad_p90=float(grads[observed].quantile(0.9)) if observed.any() else 0.0)
 
 
 def query_block(model, timestamp, shape, start, size, return_package=False):

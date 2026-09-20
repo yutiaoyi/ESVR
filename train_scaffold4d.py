@@ -15,7 +15,7 @@ import numpy as np
 import torch
 
 from dynamic_esvr.data import VolumeSequence
-from scaffold4d.model import ScaffoldESVR, query_block
+from scaffold4d.model import ScaffoldESVR, anchors_from_sequence, query_block
 
 
 def expon_lr(step, lr_init, lr_final, max_steps):
@@ -110,6 +110,20 @@ def main():
     p.add_argument("--temporal-cutoff", type=float, default=1e-3,
                    help="ESVR-only efficiency cutoff; no native equivalent (upstream alpha-composites, no hard inclusion gate)")
     p.add_argument("--max-anchors", type=int, default=40000)
+    # ESVR-specific adaptation choices (no native equivalent). Only the scale
+    # floor measurably matters (output/scaffold4d/ablation/RESULTS.md); the
+    # others default to the native/simplest setting and stay available.
+    p.add_argument("--flow-scale", type=float, default=1.0,
+                   help="Velocity bound in normalized units per unit time (native tanh bound: 1)")
+    p.add_argument("--scale-floor-voxels", type=float, default=0.5, help="Floor on a child's final scale, in voxels")
+    p.add_argument("--opacity-init", type=float, default=0.5, help="Initial sigmoid amplitude of every child (0.5 = zero bias)")
+    p.add_argument("--init", choices=("random", "data"), default="random",
+                   help="random: uniform; data: sample anchors from ground-truth intensity over all training frames (stand-in for upstream's SfM points)")
+    p.add_argument("--sigma-max", type=float, default=1e2, help="Upper clamp on the temporal inverse-scale (numerical guardrail; native: none)")
+    p.add_argument("--offset-spread", type=float, default=0.0,
+                   help="Initial child offsets ~U(-s, s) in offset units (native: 0, all children stacked at the anchor)")
+    p.add_argument("--child-scale-init-voxels", type=float, default=None,
+                   help="Initial final-scale of children in voxels for initial and grown anchors (native: anchor's own cell size)")
     p.add_argument("--block", type=int, default=64)
     p.add_argument("--tile-sampling", action="store_true", help="ESVR-only spatial sampling; no native equivalent (upstream samples camera rays)")
     # Anchor position is frozen (lr 0) natively -- not a tunable default here,
@@ -126,12 +140,23 @@ def main():
     p.add_argument("--flow-mlp-lr", type=float, default=0.001, help="Native mlp_flow_lr; constant, no decay")
     p.add_argument("--lambda-ssim", type=float, default=0.2, help="Native lambda_dssim")
     p.add_argument("--lambda-vol", type=float, default=0.01, help="Native volume regularizer weight")
+    p.add_argument("--start-stat", type=int, default=500, help="Native start_stat")
     p.add_argument("--densify-from", type=int, default=1500, help="Native update_from")
     p.add_argument("--densify-until", type=int, default=None, help="Native update_until; default steps//2 (train_n3dv.sh: 60000 of 120000)")
     p.add_argument("--densify-every", type=int, default=100, help="Native update_interval")
-    p.add_argument("--densify-grad-threshold", type=float, default=2e-4, help="Native densify_grad_threshold")
-    p.add_argument("--densify-spatial-size", type=float, default=0.02)
-    p.add_argument("--densify-temporal-size", type=float, default=0.2)
+    p.add_argument("--densify-grad-threshold", type=float, default=4e-7,
+                   help="Native densify_grad_threshold is 2e-4 for 2D view-space gradients; here it thresholds 3D centre gradients of a per-voxel-mean loss (measured p90 ~4e-7), see RESULTS.md")
+    p.add_argument("--success-threshold", type=float, default=0.8, help="Native success_threshold")
+    p.add_argument("--min-opacity", type=float, default=0.005, help="Native min_opacity (anchor pruning)")
+    p.add_argument("--lambda-temporal-sigma", type=float, default=1.0, help="Native gamma: gradient weight opacity_t * sigma^gamma")
+    p.add_argument("--grow-voxel-size", type=float, default=1.0, help="Finest anchor-grid cell, in data voxels (native voxel_size, scene units)")
+    p.add_argument("--grow-t-size", type=float, default=None, help="Temporal grid cell in normalized time; default one frame interval (paper)")
+    p.add_argument("--grow-init-factor", type=int, default=16, help="Native update_init_factor")
+    p.add_argument("--grow-hierarchy-factor", type=int, default=4, help="Native update_hierachy_factor")
+    p.add_argument("--grow-depth", type=int, default=3, help="Native update_depth")
+    p.add_argument("--grow-all-candidates", action="store_true", help="Native disable_partial_densify")
+    p.add_argument("--adam-eps", type=float, default=1e-15, help="Native Adam eps")
+    p.add_argument("--clip-grad", type=float, default=0.0, help="Global grad-norm clip; 0 disables (native: none)")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--resume", help="Trusted local checkpoint; same manifest and training options required")
     p.add_argument("--eval-only", action="store_true")
@@ -142,9 +167,15 @@ def main():
         args.densify_until = args.steps // 2
     if args.steps < 1 or args.block < 1 or not 0 <= args.lambda_ssim <= 1:
         p.error("Invalid steps, block or SSIM weight")
-    if min(args.offset_lr_init, args.feat_lr, args.scale_lr, args.opacity_mlp_lr_init,
-           args.shape_mlp_lr, args.flow_mlp_lr) <= 0 or args.anchor_lr < 0:
+    if min(args.offset_lr_init, args.offset_lr_final, args.feat_lr, args.scale_lr, args.opacity_mlp_lr_init,
+           args.opacity_mlp_lr_final, args.shape_mlp_lr, args.flow_mlp_lr) <= 0 or args.anchor_lr < 0:
         p.error("Invalid learning rate")
+    if (min(args.flow_scale, args.scale_floor_voxels, args.grow_voxel_size, args.adam_eps, args.sigma_max) <= 0
+            or args.offset_spread < 0 or (args.child_scale_init_voxels is not None and args.child_scale_init_voxels <= 0)
+            or not 0 < args.opacity_init < 1 or args.clip_grad < 0 or args.min_opacity < 0
+            or not 0 < args.success_threshold <= 1 or args.grow_depth < 1 or args.grow_init_factor < 1
+            or args.grow_hierarchy_factor < 2 or args.max_anchors < 1):
+        p.error("Invalid adaptation/growing option")
     if args.eval_only and not args.resume:
         p.error("--eval-only requires --resume")
     sequence = VolumeSequence(args.manifest)
@@ -159,15 +190,29 @@ def main():
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     random.seed(args.seed)
+    voxel = 2 / max(sequence.shape)
+    grow_voxel_size = args.grow_voxel_size * voxel
+    grow_t_size = args.grow_t_size or 1.0 / max(len(sequence.train_indices) - 1, 1)
     saved = torch.load(args.resume, map_location="cuda", weights_only=False) if args.resume else None
-    config = saved["model_config"] if saved else dict(anchors=args.anchors, children=args.children,
-        shape=sequence.shape, feat_dim=args.feat_dim, hidden=args.hidden,
-        temporal_beta=args.temporal_beta, temporal_cutoff=args.temporal_cutoff)
-    model = ScaffoldESVR(**config).cuda()
     if saved:
+        model = ScaffoldESVR(**saved["model_config"]).cuda()
         if saved["manifest"] != sequence.config:
             p.error("Checkpoint manifest differs from supplied sequence")
-        model.load_state_dict(saved["model"])
+        # Growing statistics are non-persistent buffers; older checkpoints
+        # carried a different set of (also transient) statistics.
+        model.load_state_dict(saved["model"], strict=False)
+    else:
+        anchor_init = None
+        if args.init == "data":
+            anchor_init = anchors_from_sequence(sequence, args.anchors, grow_voxel_size, grow_t_size,
+                                                generator=torch.Generator().manual_seed(args.seed))
+        model = ScaffoldESVR(anchors=args.anchors, children=args.children, shape=sequence.shape,
+                             feat_dim=args.feat_dim, hidden=args.hidden, temporal_beta=args.temporal_beta,
+                             temporal_cutoff=args.temporal_cutoff, flow_scale=args.flow_scale,
+                             scale_floor=args.scale_floor_voxels * voxel, opacity_init=args.opacity_init,
+                             anchor_init=anchor_init, sigma_max=args.sigma_max, offset_spread=args.offset_spread,
+                             child_scale_init=None if args.child_scale_init_voxels is None else args.child_scale_init_voxels * voxel).cuda()
+    if saved:
         if args.eval_only:
             print(json.dumps(evaluate(model, sequence, output, args.block), indent=2))
             return
@@ -190,7 +235,8 @@ def main():
             {"params": [model.anchor_feat], "lr": args.feat_lr, "name": "feat"},
             {"params": model.heads["opacity"].parameters(), "lr": args.opacity_mlp_lr_init, "name": "opacity_mlp"},
             {"params": model.heads["shape"].parameters(), "lr": args.shape_mlp_lr, "name": "shape_mlp"},
-            {"params": model.heads["flow"].parameters(), "lr": args.flow_mlp_lr, "name": "flow_mlp"}])
+            {"params": model.heads["flow"].parameters(), "lr": args.flow_mlp_lr, "name": "flow_mlp"}],
+            eps=args.adam_eps)
 
     lr_schedule = dict(
         anchor=lambda step: expon_lr(step, args.anchor_lr, args.anchor_lr, args.steps),
@@ -245,18 +291,30 @@ def main():
                 print("NONFINITE " + json.dumps(diag), flush=True)
                 raise RuntimeError(f"Nonfinite loss at step {step}")
             loss.backward()
-            if len(sliced.get_xyz):
-                model.record_gradients(sliced, package["visibility_filter"])
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, error_if_nonfinite=True)
+            # Native schedule (train.py): statistics between start_stat and
+            # update_until, anchor adjustment every update_interval after update_from.
+            if args.start_stat < step < args.densify_until and len(sliced.get_xyz):
+                model.record_statistics(sliced, package["visibility_filter"], args.lambda_temporal_sigma)
+            if args.clip_grad:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip_grad, error_if_nonfinite=True)
             for group in optimizer.param_groups:
                 group["lr"] = lr_schedule[group["name"]](step)
             optimizer.step()
             model.stabilize()
-            if args.densify_from <= step <= args.densify_until and step % args.densify_every == 0:
-                event = model.densify(optimizer, grad_threshold=args.densify_grad_threshold,
-                    max_anchors=args.max_anchors, spatial_size=args.densify_spatial_size,
-                    temporal_size=args.densify_temporal_size)
+            if args.densify_from < step < args.densify_until and step % args.densify_every == 0:
+                # Upstream renders whole frames, so a Gaussian is observed on
+                # every step; here a child is only observed on steps whose
+                # block contains it, so the "observed enough" interval is
+                # scaled by the block's share of the volume.
+                block_fraction = math.prod(min(args.block, s) / s for s in sequence.shape)
+                event = model.adjust_anchors(optimizer, check_interval=args.densify_every * block_fraction,
+                    success_threshold=args.success_threshold, grad_threshold=args.densify_grad_threshold,
+                    min_opacity=args.min_opacity, voxel_size=grow_voxel_size, t_size=grow_t_size,
+                    init_factor=args.grow_init_factor, hierarchy_factor=args.grow_hierarchy_factor,
+                    depth=args.grow_depth, max_anchors=args.max_anchors, partial=not args.grow_all_candidates)
                 print("DENSIFY " + json.dumps(dict(step=step, **event)), flush=True)
+                with (output / "densify.jsonl").open("a") as densify_log:
+                    densify_log.write(json.dumps(dict(step=step, **event)) + "\n")
             if args.eval_every and (step == 1 or step % args.eval_every == 0 or step == args.steps):
                 values = monitor(model, sequence, monitor_indices, args.block)
                 with (output / "monitor.jsonl").open("a") as metrics_log:

@@ -52,22 +52,44 @@ class Mathematics(unittest.TestCase):
 
         self.assertTrue(torch.autograd.gradcheck(forward, tuple(params), eps=1e-6, atol=1e-4))
 
-    def test_densify_and_optimizer(self):
+    def test_grow_prune_and_optimizer(self):
         model = ScaffoldESVR(anchors=4, children=2, shape=(8, 8, 8))
         optimizer = torch.optim.Adam(model.parameters())
         sum(p.square().sum() for p in model.parameters()).backward()
         optimizer.step()
         before = len(model.anchor)
-        model.observations.fill_(1)
-        model.weight_accum.fill_(1.0)
-        model.grad_accum[0] = 1.0  # only anchor 0 exceeds the threshold
-        event = model.densify(optimizer, grad_threshold=0.5, max_anchors=10)
+        with torch.no_grad():
+            model.anchor[:, :3] = torch.tensor([[0.0, 0, 0], [0.5, 0, 0], [0, 0.5, 0], [0, 0, 0.5]])
+            model.offset[0, :, :3] = torch.tensor([[3.0, 0, 0], [0, 3.0, 0]])  # anchor 0's children sit in empty cells
+        model.child_denom.fill_(100.0)
+        model.child_grad_accum[:2] = 100.0  # only anchor 0's children exceed the threshold
+        model.anchor_denom.fill_(100.0)
+        model.anchor_opacity_accum.fill_(100.0)
+        model.anchor_opacity_accum[1] = 0.0  # anchor 1 stayed transparent: pruned
+        event = model.adjust_anchors(optimizer, grad_threshold=0.5, max_anchors=10, voxel_size=0.02,
+                                     t_size=0.1, init_factor=1, hierarchy_factor=4, depth=1, partial=False)
         self.assertEqual(event["before"], before)
-        self.assertGreater(event["after"], before)
-        self.assertTrue((optimizer.state[model.anchor]["exp_avg"][before:] == 0).all())
+        self.assertEqual(event["pruned"], 1)
+        self.assertEqual(event["grown"], 2)
+        self.assertEqual(len(model.anchor), before - 1 + 2)
+        self.assertEqual(len(model.child_denom), len(model.anchor) * 2)
+        self.assertTrue((optimizer.state[model.anchor]["exp_avg"][before - 1:] == 0).all())
+        # A second round with the same votes must not duplicate occupied cells.
+        model.child_denom.fill_(100.0)
+        model.child_grad_accum[:2] = 100.0
+        self.assertEqual(model.adjust_anchors(optimizer, grad_threshold=0.5, max_anchors=10, voxel_size=0.02,
+                                              t_size=0.1, init_factor=1, hierarchy_factor=4, depth=1, partial=False)["grown"], 0)
         optimizer.zero_grad()
         sum(p.square().sum() for p in model.parameters()).backward()
         optimizer.step()
+
+    def test_data_init_and_bounds(self):
+        model = ScaffoldESVR(anchors=8, children=2, shape=(8, 8, 8), flow_scale=8.0, scale_floor=0.05, opacity_init=0.1,
+                             anchor_init=torch.rand(8, 4) * 2 - 1)
+        g = model.generate()
+        self.assertTrue((g.scale >= 0.05).all())
+        self.assertTrue((g.flow.abs() <= 8.0).all())
+        self.assertLess((g.opacity_raw.sigmoid().mean() - 0.1).abs(), 0.05)
 
 
 @unittest.skipUnless(torch.cuda.is_available(), "CUDA voxelizer requires GPU")
@@ -98,26 +120,27 @@ class CUDA(unittest.TestCase):
                 continue
             self.assertTrue(torch.isfinite(p.grad).all(), name)
 
-        # Finite-difference check on a central voxel, away from hard cutoffs,
-        # for the parameters that most directly move the reconstructed field:
-        # anchor xyz/t, offset, log_offset_scale. This is exactly the kind of
-        # check that caught the CUDA position-gradient bug fixed for the
-        # other two branches (docs/ESVR4D.md) — must pass here too.
-        weight = torch.zeros_like(full)
-        weight[5:7, 4:6, 3:5] = 1
+        # Finite-difference check of the position path (anchor xyz, offset)
+        # with a RELATIVE tolerance: the unfixed CUDA voxelizer scales every
+        # position gradient by dVoxel^2 (1/2304 here), which an absolute
+        # tolerance can let through when gradients are small. Children are
+        # kept above ~1 voxel so no finite-difference step crosses the
+        # kernel's hard support cutoff (sub-voxel children touch no voxel
+        # centre and make the numeric derivative meaningless).
+        with torch.no_grad():
+            model.log_offset_scale[:, 4:7] = torch.log(torch.tensor(0.5))
+        target = torch.rand_like(full)
 
         def loss_fn():
-            return (query_block(model, 0.4, (12, 10, 8), (0, 0, 0), (12, 10, 8)).square() * weight).sum()
+            return (query_block(model, 0.4, (12, 10, 8), (0, 0, 0), (12, 10, 8)) - target).square().sum()
 
         model.zero_grad(set_to_none=True)
         loss_fn().backward()
-        checks = [("anchor", (0, 0)), ("anchor", (0, 3)), ("offset", (0, 0, 0)), ("log_offset_scale", (0, 4))]
-        for name, index in checks:
+        ratios = []
+        for name, index in [("anchor", (i, j)) for i in range(6) for j in range(3)] + [("offset", (i, 0, j)) for i in range(6) for j in range(3)]:
             param = getattr(model, name)
-            if param.grad is None or param.grad[index].item() == 0:
-                continue
             analytical = param.grad[index].item()
-            eps = 1e-4
+            eps = 2e-4
             with torch.no_grad():
                 original = param[index].item()
                 param[index] = original + eps
@@ -126,7 +149,11 @@ class CUDA(unittest.TestCase):
                 minus = loss_fn().item()
                 param[index] = original
             numeric = (plus - minus) / (2 * eps)
-            self.assertAlmostEqual(analytical, numeric, delta=max(0.01, abs(analytical) * 0.1), msg=name)
+            if abs(numeric) > 0.05 and analytical != 0:
+                ratios.append(numeric / analytical)
+        self.assertGreater(len(ratios), 8)
+        median = torch.tensor(ratios).median().item()
+        self.assertAlmostEqual(median, 1.0, delta=0.15, msg=f"position-gradient scale off: numeric/analytic median {median}")
 
 
 if __name__ == "__main__":
