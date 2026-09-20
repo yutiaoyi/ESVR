@@ -144,8 +144,8 @@ def main():
     p.add_argument("--densify-from", type=int, default=1500, help="Native update_from")
     p.add_argument("--densify-until", type=int, default=None, help="Native update_until; default steps//2 (train_n3dv.sh: 60000 of 120000)")
     p.add_argument("--densify-every", type=int, default=100, help="Native update_interval")
-    p.add_argument("--densify-grad-threshold", type=float, default=4e-7,
-                   help="Native densify_grad_threshold is 2e-4 for 2D view-space gradients; here it thresholds 3D centre gradients of a per-voxel-mean loss (measured p90 ~4e-7), see RESULTS.md")
+    p.add_argument("--densify-grad-threshold", type=float, default=1.2e-3,
+                   help="Native densify_grad_threshold is 2e-4 for 2D view-space gradients; here it thresholds 3D centre gradients of a per-voxel-mean loss (measured p90 ~1.2e-3 with the fixed voxelizer; the earlier 4e-7 was measured through the unfixed one, which scales position gradients by 1/4096)")
     p.add_argument("--success-threshold", type=float, default=0.8, help="Native success_threshold")
     p.add_argument("--min-opacity", type=float, default=0.005, help="Native min_opacity (anchor pruning)")
     p.add_argument("--lambda-temporal-sigma", type=float, default=1.0, help="Native gamma: gradient weight opacity_t * sigma^gamma")

@@ -5,14 +5,17 @@
 # single flag each run reverts. Usage: run_scaffold4d_ablation.sh <lane>
 set -euo pipefail
 cd "$(dirname "$0")/.."
-source .venv/bin/activate
+# Never "source .venv/bin/activate" here: until 2026-09-20 the copied
+# activate script pointed at ESVR/.venv, whose voxelizer has the unfixed
+# position gradient. Every run in output/scaffold4d/ablation used it.
+PY=.venv/bin/python
 OUT=output/scaffold4d/ablation
 COMMON="--manifest experiments/vorts_90_all_train.json --eval-every 2000 --tile-sampling"
 run() {
   name=$1; shift
   [ -e "$OUT/$name/evaluation/metrics.json" ] && { echo "skip $name"; return; }
   rm -rf "$OUT/$name"
-  python train_scaffold4d.py $COMMON --output "$OUT/$name" "$@" > "$OUT/$name.log" 2>&1
+  $PY train_scaffold4d.py $COMMON --output "$OUT/$name" "$@" > "$OUT/$name.log" 2>&1
 }
 case "$1" in
   1)

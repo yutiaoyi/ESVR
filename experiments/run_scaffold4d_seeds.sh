@@ -5,7 +5,8 @@
 # K: fixed 6000 anchors with flow 1, to test the flow x growing interaction.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-source .venv/bin/activate
+# See run_scaffold4d_ablation.sh: never "source .venv/bin/activate" here.
+PY=.venv/bin/python
 OUT=output/scaffold4d/ablation
 COMMON="--manifest experiments/vorts_90_all_train.json --eval-every 2000 --tile-sampling"
 J="--flow-scale 1 --opacity-init 0.5 --init random"
@@ -14,7 +15,7 @@ run() {
   name=$1; shift
   [ -e "$OUT/$name/evaluation/metrics.json" ] && { echo "skip $name"; return; }
   rm -rf "$OUT/$name"
-  python train_scaffold4d.py $COMMON --output "$OUT/$name" "$@" > "$OUT/$name.log" 2>&1
+  $PY train_scaffold4d.py $COMMON --output "$OUT/$name" "$@" > "$OUT/$name.log" 2>&1
 }
 case "$1" in
   1)

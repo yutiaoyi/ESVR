@@ -1,5 +1,22 @@
 # ESVR-Scaffold4D — adaptation fixes and leave-one-out ablation (2026-09-20)
 
+> **⚠️ INVALID KERNEL — every run in this directory was trained with the
+> UNFIXED CUDA voxelizer (position gradients scaled by dVoxel² = 1/4096).**
+> Discovered 2026-09-20 16:00: `ESVR-4dgs/.venv/bin/activate` was copied
+> from `ESVR/` on 2026-09-04 and hard-coded `VIRTUAL_ENV=…/ESVR/.venv`, so
+> `source .venv/bin/activate && python …` (used by
+> `run_scaffold4d_ablation.sh`/`run_scaffold4d_seeds.sh` as first written)
+> silently ran the original folder's interpreter and its unfixed extension;
+> `.venv/bin/python` (used by `run_vorts_dynamic.sh` for the 09-12/13 runs)
+> loads the fixed one. Verified by finite differences: numeric/analytic
+> position-gradient ratio 36 (=1/dVoxel²) at 12³ through `activate`, 1.00
+> through `.venv/bin/python`. The activate scripts and both experiment
+> scripts are fixed; the runs below are kept as a record of the
+> *unfixed-kernel* behaviour only and are being repeated. Forward passes
+> (and therefore the PSNRs as measured) are correct; what is wrong is the
+> optimisation signal they were trained with, so nothing below transfers
+> to the fixed kernel without re-measurement.
+
 > **Headline**: fixing the ESVR adaptation and porting 4D-Scaffold-GS's own
 > anchor growing lifts the 90-frame vorts reconstruction from **24.35 dB**
 > (`output/scaffold4d/vorts90_native_recipe`) to **31.9 dB** at the same
