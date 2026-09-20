@@ -83,6 +83,21 @@ class Mathematics(unittest.TestCase):
         sum(p.square().sum() for p in model.parameters()).backward()
         optimizer.step()
 
+    def test_prune_dead_anchors(self):
+        model = ScaffoldESVR(anchors=3, children=2, shape=(8, 8, 8))
+        optimizer = torch.optim.Adam(model.parameters())
+        model.anchor_denom.fill_(100.0)
+        model.anchor_opacity_accum.fill_(100.0)  # upstream min_opacity rule never fires
+        model.child_seen.fill_(100.0)
+        model.child_effective.fill_(100.0)
+        model.child_effective[2:4] = 0.0  # anchor 1: seen often, never covered a voxel
+        model.child_seen[4:6] = 0.0  # anchor 2: never seen -> not judged
+        event = model.adjust_anchors(optimizer, grad_threshold=1e9, max_anchors=3, prune_dead=True)
+        self.assertEqual(event["pruned_dead"], 1)
+        self.assertEqual(len(model.anchor), 2)
+        self.assertEqual(len(model.child_seen), 4)
+        self.assertEqual(model.adjust_anchors(optimizer, grad_threshold=1e9, max_anchors=3, prune_dead=False)["pruned"], 0)
+
     def test_data_init_and_bounds(self):
         model = ScaffoldESVR(anchors=8, children=2, shape=(8, 8, 8), flow_scale=8.0, scale_floor=0.05, opacity_init=0.1,
                              anchor_init=torch.rand(8, 4) * 2 - 1)

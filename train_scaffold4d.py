@@ -140,6 +140,10 @@ def main():
     p.add_argument("--flow-mlp-lr", type=float, default=0.001, help="Native mlp_flow_lr; constant, no decay")
     p.add_argument("--lambda-ssim", type=float, default=0.2, help="Native lambda_dssim")
     p.add_argument("--lambda-vol", type=float, default=0.01, help="Native volume regularizer weight")
+    p.add_argument("--vol-reg-visible", action="store_true",
+                   help="Apply the volume regularizer only to children whose footprint intersects the block (ESVR has no pixel dilation, so an uncovered child otherwise only ever shrinks)")
+    p.add_argument("--prune-dead", action="store_true",
+                   help="ESVR prune_zeros/dark rules per anchor: drop anchors whose children all covered no voxel or are below 1/255")
     p.add_argument("--start-stat", type=int, default=500, help="Native start_stat")
     p.add_argument("--densify-from", type=int, default=1500, help="Native update_from")
     p.add_argument("--densify-until", type=int, default=None, help="Native update_until; default steps//2 (train_n3dv.sh: 60000 of 120000)")
@@ -282,7 +286,9 @@ def main():
             if args.lambda_ssim:
                 loss = loss + args.lambda_ssim * (1 - ssim(pred, target))
             if args.lambda_vol and len(sliced.get_xyz):
-                loss = loss + args.lambda_vol * sliced.get_scaling.prod(dim=-1).mean()
+                scaling = sliced.get_scaling[package["visibility_filter"]] if args.vol_reg_visible else sliced.get_scaling
+                if len(scaling):
+                    loss = loss + args.lambda_vol * scaling.prod(dim=-1).mean()
             if not torch.isfinite(loss):
                 diag = dict(step=step, pred_min=pred.min().item(), pred_max=pred.max().item(),
                     active=len(sliced.get_xyz),
@@ -311,7 +317,8 @@ def main():
                     success_threshold=args.success_threshold, grad_threshold=args.densify_grad_threshold,
                     min_opacity=args.min_opacity, voxel_size=grow_voxel_size, t_size=grow_t_size,
                     init_factor=args.grow_init_factor, hierarchy_factor=args.grow_hierarchy_factor,
-                    depth=args.grow_depth, max_anchors=args.max_anchors, partial=not args.grow_all_candidates)
+                    depth=args.grow_depth, max_anchors=args.max_anchors, partial=not args.grow_all_candidates,
+                    prune_dead=args.prune_dead)
                 print("DENSIFY " + json.dumps(dict(step=step, **event)), flush=True)
                 with (output / "densify.jsonl").open("a") as densify_log:
                     densify_log.write(json.dumps(dict(step=step, **event)) + "\n")

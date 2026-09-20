@@ -124,8 +124,14 @@ class ScaffoldESVR(nn.Module):
         n = anchors * children
         self.register_buffer("child_grad_accum", torch.zeros(n), persistent=False)
         self.register_buffer("child_denom", torch.zeros(n), persistent=False)
+        # ESVR prune_zeros analogue: a child whose data gradient is exactly
+        # zero while its bounding box intersects the block covered no voxel.
+        self.register_buffer("child_seen", torch.zeros(n), persistent=False)
+        self.register_buffer("child_effective", torch.zeros(n), persistent=False)
         self.register_buffer("anchor_opacity_accum", torch.zeros(anchors), persistent=False)
         self.register_buffer("anchor_denom", torch.zeros(anchors), persistent=False)
+
+    statistic_buffers = ("child_grad_accum", "child_denom", "child_seen", "child_effective")
 
     def _initial_offsets(self, n, device=None):
         # Upstream starts all K children of an anchor at zero offset, i.e.
@@ -204,6 +210,8 @@ class ScaffoldESVR(nn.Module):
         index = sliced.child_index[visibility]
         self.child_grad_accum.index_add_(0, index, grad * weight)
         self.child_denom.index_add_(0, index, weight)
+        self.child_seen.index_add_(0, index, torch.ones_like(grad))
+        self.child_effective.index_add_(0, index, (grad > 0).float())
 
     population_params = ("anchor", "anchor_feat", "offset", "log_offset_scale")
 
@@ -234,16 +242,33 @@ class ScaffoldESVR(nn.Module):
     @torch.no_grad()
     def adjust_anchors(self, optimizer, check_interval=100, success_threshold=0.8, grad_threshold=2e-4,
                        min_opacity=0.005, voxel_size=2 / 128, t_size=1 / 89, init_factor=16,
-                       hierarchy_factor=4, depth=3, max_anchors=40000, partial=True):
+                       hierarchy_factor=4, depth=3, max_anchors=40000, partial=True, prune_dead=False,
+                       dark=1 / 255):
         """Upstream adjust_anchor: multi-level voxel-grid anchor growing from
         sufficiently observed, high-gradient children, then pruning of anchors
-        whose children stayed near-transparent."""
+        whose children stayed near-transparent. With prune_dead, ESVR's
+        prune_zeros/dark rules are applied per anchor: every child either
+        covered no voxel in any observation this window or has intensity
+        below the kernel cutoff."""
         n, k = len(self.anchor), self.config["children"]
         grads = (self.child_grad_accum / self.child_denom).nan_to_num(0.0)
         observed = self.child_denom > check_interval * success_threshold * 0.5
         checked = self.anchor_denom > check_interval * success_threshold
         prune = (self.anchor_opacity_accum < min_opacity * self.anchor_denom) & checked
         g = self.generate()
+        dead_count = 0
+        if prune_dead:
+            intensity = g.opacity_raw.sigmoid()[..., 0]
+            seen = self.child_seen.view(n, k)
+            effective = self.child_effective.view(n, k)
+            # A child is judged only once it has been seen enough times this
+            # window; a dark child needs no observation at all.
+            enough = seen >= check_interval * success_threshold * 0.5
+            useless = (intensity < dark) | (enough & (effective == 0))
+            judged = (intensity < dark) | enough
+            dead = useless.all(1) & judged.any(1) & checked
+            dead_count = int((dead & ~prune).sum())
+            prune |= dead
         child4d = torch.cat([g.home_xyz, g.home_t], -1).reshape(-1, 4)
         child_feat = self.anchor_feat.repeat_interleave(k, 0)
         new = dict(anchor=[], anchor_feat=[], offset=[], log_offset_scale=[])
@@ -292,15 +317,19 @@ class ScaffoldESVR(nn.Module):
         # actually checked this round; the rest keep accumulating.
         self.child_grad_accum[observed] = 0
         self.child_denom[observed] = 0
+        checked_children = checked.repeat_interleave(k)
+        self.child_seen[checked_children] = 0
+        self.child_effective[checked_children] = 0
         self.anchor_opacity_accum[checked] = 0
         self.anchor_denom[checked] = 0
         child_keep = keep.repeat_interleave(k)
-        self.child_grad_accum = torch.cat([self.child_grad_accum[child_keep], self.child_grad_accum.new_zeros(added * k)])
-        self.child_denom = torch.cat([self.child_denom[child_keep], self.child_denom.new_zeros(added * k)])
+        for name in self.statistic_buffers:
+            value = getattr(self, name)
+            setattr(self, name, torch.cat([value[child_keep], value.new_zeros(added * k)]))
         self.anchor_opacity_accum = torch.cat([self.anchor_opacity_accum[keep], self.anchor_opacity_accum.new_zeros(added)])
         self.anchor_denom = torch.cat([self.anchor_denom[keep], self.anchor_denom.new_zeros(added)])
         self.replace_population(optimizer, keep, extra)
-        return dict(before=n, after=len(self.anchor), grown=added, pruned=int(prune.sum()),
+        return dict(before=n, after=len(self.anchor), grown=added, pruned=int(prune.sum()), pruned_dead=dead_count,
                     observed_children=int(observed.sum()), grad_p50=float(grads[observed].median()) if observed.any() else 0.0,
                     grad_p90=float(grads[observed].quantile(0.9)) if observed.any() else 0.0)
 
