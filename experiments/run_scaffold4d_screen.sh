@@ -22,4 +22,8 @@ case "$1" in
   1) run T0_control; run T1_volreg_visible --vol-reg-visible; run T2_prune_dead --prune-dead; run T3_spread --offset-spread 0.5 ;;
   2) run T4_childscale4 --child-scale-init-voxels 4; run T5_sigma1000 --sigma-max 1000; run T6_novol --lambda-vol 0
      run T7_combo --vol-reg-visible --prune-dead --offset-spread 0.5 --child-scale-init-voxels 4 ;;
+  # Children per anchor: upstream's K=10 assumes surplus children are masked
+  # for free under alpha compositing; under additive accumulation every
+  # surplus child must be driven dead. T9 matches T0's total child budget.
+  3) run T8_K5 --children 5; run T9_K5_cap80k --children 5 --max-anchors 80000; run T10_K3 --children 3 ;;
 esac
