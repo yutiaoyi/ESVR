@@ -20,4 +20,7 @@ case "$1" in
   1) run I1_150k_decay0.1_480k --max-anchors 150000 --steps 480000 --final-lr-scale 0.1 ;;
   2) run I2_150k_decay0.01_960k --max-anchors 150000 --steps 960000 ;;
   3) run I3_300k_decay0.01_480k --max-anchors 300000 --steps 480000 ;;
+  # Steps-only control at the 40k cap: same as decay/H1_40k_decay0.01 but
+  # 480k steps (growing window and decay stretch with --steps).
+  4) run J1_40k_decay0.01_480k --max-anchors 40000 --steps 480000 ;;
 esac
