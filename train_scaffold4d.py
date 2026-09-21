@@ -159,8 +159,8 @@ def main():
     p.add_argument("--grow-hierarchy-factor", type=int, default=4, help="Native update_hierachy_factor")
     p.add_argument("--grow-depth", type=int, default=3, help="Native update_depth")
     p.add_argument("--grow-all-candidates", action="store_true", help="Native disable_partial_densify")
-    p.add_argument("--final-lr-scale", type=float, default=1.0,
-                   help="Log-linear decay of the natively constant groups (scale, feature, shape/flow MLP) to lr*scale at --steps; 1 = native (no decay). Monitored PSNR oscillates +-0.7 dB between late checkpoints without it")
+    p.add_argument("--final-lr-scale", type=float, default=0.01,
+                   help="Log-linear decay of the natively constant groups (scale, feature, shape/flow MLP) to lr*scale at --steps; 1 = native (no decay, +-0.7 dB late oscillation, -5 dB at 150k anchors -- output/scaffold4d/decay/RESULTS.md)")
     p.add_argument("--adam-eps", type=float, default=1e-15, help="Native Adam eps")
     p.add_argument("--clip-grad", type=float, default=0.0, help="Global grad-norm clip; 0 disables (native: none)")
     p.add_argument("--seed", type=int, default=42)
