@@ -1,0 +1,69 @@
+{
+  "shape_xyz": [
+    128,
+    128,
+    128
+  ],
+  "storage_axes": "zyx",
+  "dtype": "<f4",
+  "intensity_range": [
+    -1,
+    1
+  ],
+  "time_range": [
+    1,
+    90
+  ],
+  "frames": [
+    {
+      "path": "../data/xueliao_timevaryingdata/vorts_timevarying/vorts0071.raw",
+      "time": 71,
+      "split": "train"
+    },
+    {
+      "path": "../data/xueliao_timevaryingdata/vorts_timevarying/vorts0072.raw",
+      "time": 72,
+      "split": "train"
+    },
+    {
+      "path": "../data/xueliao_timevaryingdata/vorts_timevarying/vorts0073.raw",
+      "time": 73,
+      "split": "train"
+    },
+    {
+      "path": "../data/xueliao_timevaryingdata/vorts_timevarying/vorts0074.raw",
+      "time": 74,
+      "split": "train"
+    },
+    {
+      "path": "../data/xueliao_timevaryingdata/vorts_timevarying/vorts0075.raw",
+      "time": 75,
+      "split": "train"
+    },
+    {
+      "path": "../data/xueliao_timevaryingdata/vorts_timevarying/vorts0076.raw",
+      "time": 76,
+      "split": "train"
+    },
+    {
+      "path": "../data/xueliao_timevaryingdata/vorts_timevarying/vorts0077.raw",
+      "time": 77,
+      "split": "train"
+    },
+    {
+      "path": "../data/xueliao_timevaryingdata/vorts_timevarying/vorts0078.raw",
+      "time": 78,
+      "split": "train"
+    },
+    {
+      "path": "../data/xueliao_timevaryingdata/vorts_timevarying/vorts0079.raw",
+      "time": 79,
+      "split": "train"
+    },
+    {
+      "path": "../data/xueliao_timevaryingdata/vorts_timevarying/vorts0080.raw",
+      "time": 80,
+      "split": "train"
+    }
+  ]
+}
