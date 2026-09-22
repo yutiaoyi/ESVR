@@ -53,6 +53,8 @@ td.num{text-align:right;font-size:15px;font-weight:600;white-space:nowrap} td.nu
 .pill{display:inline-block;font-size:11px;font-weight:600;padding:2px 9px;border-radius:100px;white-space:nowrap}
 .pill.ref{background:var(--info-soft);color:var(--info)} .pill.final{background:var(--good-soft);color:var(--good)} .pill.old{background:var(--warn-soft);color:var(--warn)}
 .pill.bad{background:var(--bad-soft);color:var(--bad)} .pill.run{background:var(--accent-soft);color:var(--accent)}
+.ktag{font-size:10.5px;margin-top:6px;white-space:nowrap;font-family:"JetBrains Mono",monospace} .ktag.k-ok{color:var(--good)} .ktag.k-warn{color:var(--warn)} .ktag.k-bad{color:var(--bad)} .ktag.k-neutral{color:var(--ink3)}
+table.dev td,table.dev th{font-size:12.5px;padding:8px 10px} table.dev{min-width:0}
 .callout{border-left:3px solid var(--accent);background:var(--accent-soft);border-radius:0 6px 6px 0;padding:12px 16px;font-size:13.5px;color:var(--ink2);margin-top:14px} .callout b{color:var(--ink)}
 .callout.warn{border-color:var(--bad);background:var(--bad-soft)}
 dl.cfg{display:grid;grid-template-columns:max-content 1fr;gap:4px 16px;font-size:13px;margin:0} dl.cfg dt{color:var(--ink3);font-family:"JetBrains Mono",monospace;font-size:12px} dl.cfg dd{margin:0;color:var(--ink2)}
@@ -64,7 +66,8 @@ footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--line);font-si
 <div class="eyebrow">ESVR · time-varying reconstruction · status report</div>
 <h1>三种动态场景表征融入 ESVR 的实验记录</h1>
 <p class="sub">把 Deformable 3D Gaussians、4D Gaussian Splatting、4D-Scaffold-GS 三种时变表征接入 ESVR 的标量体素直接监督框架(基元只有中心/尺度/旋转/一个标量强度,无颜色、无视角、无透明度合成)。本页汇总 vorts 90 帧序列上全部真实数据实验,含配置、改动、规模与结果。</p>
-<div class="meta"><span><b>数据</b> vorts_timevarying,90 帧,128³,float32,值域归一化到 [0,1]</span><span><b>口径</b> 3D 体素 PSNR,逐帧计算后取均值;全 90 帧参与训练,无留出测试</span><span><b>更新</b> 2026-09-22</span></div>
+<div class="meta"><span><b>数据</b> vorts_timevarying,90 帧,128³,float32,值域归一化到 [0,1]</span><span><b>口径</b> 3D 体素 PSNR,逐帧计算后取均值</span><span><b>更新</b> 2026-09-22</span></div>
+<div class="callout warn" style="margin-top:14px"><b>所有数字都是训练集拟合质量。</b>全部实验用全 90 帧训练,从未做过留出时间点的验证;因此本页不能回答“模型是否学到了可插值的连续运动”,动图也只是把 90 个训练时刻串起来,帧间没有插值。这是自项目交接起就存在、至今未补的最大空白。另:2026-09-22 起每次运行会写 <code>voxelizer.json</code>(加载的 CUDA 扩展路径与 SHA256),并拒绝外来扩展;各行的“核”标签是对更早运行的事后判定,依据见 A 节与 D.2 说明。</div>
 </header>
 <div class="stats">
 <div class="stat"><div class="l">当前最佳动态模型</div><b class="hero">39.73 dB</b><div class="s">Scaffold4D · 263k 锚点 · 480k 步 · 压缩后 9.3 MB</div></div>
@@ -83,85 +86,92 @@ footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--line);font-si
 <div class="lineage">不涉及时变表征,衡量"每帧独立重建能到多好";也是 40 dB 目标的参照系(逐帧 ESVR 每帧约 2.4 万个有效基元)</div>
 <div class="tablewrap"><table><thead><tr><th>结果</th><th>配置 / 路径</th><th>规模 / 耗时</th><th>高斯数</th><th>可视化</th><th>状态</th><th class="num">平均 PSNR</th></tr></thead><tbody>
 <tr>
+<td class="name">零模型基线:复制上一帧</td>
+<td class="what">不训练任何模型,用第 t−1 帧预测第 t 帧(帧 1→2 的 PSNR);用第 1 帧预测第 90 帧为 13.77 dB。任何低于此的动态模型都不如“什么都不建模”<div class="path">(数据本身)</div></td>
+<td class="scale">0 s<br>0 MB</td><td class="counts">—</td>
+<td class="vizcell"><span class="none">未生成</span></td>
+<td><span class="pill ref">零模型</span><div class="ktag k-neutral">—</div></td>
+<td class="num">30.39 dB<div class="sub"></div></td></tr>
+<tr>
 <td class="name">单帧 vorts0001 基线</td>
 <td class="what">原生 <code>train_chunk.py</code> 配方,22,400 迭代,增密+剪枝,未修复核<div class="path">output/experiments/vorts0001_baseline/</div></td>
 <td class="scale"><b>36.8 s</b><br>0.92 MB</td><td class="counts"><b>21,401</b> 个高斯<br><span class="sub">20,000 初始 → 增密 → 剪枝后</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/experiments__vorts0001_baseline__curve_full.jpg" data-cap="experiments__vorts0001_baseline · 曲线"><img src="img/experiments__vorts0001_baseline__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/experiments__vorts0001_baseline__slice_full.jpg" data-cap="experiments__vorts0001_baseline · 切片"><img src="img/experiments__vorts0001_baseline__slice.jpg" alt="切片"><span>切片</span></button></div></td>
-<td><span class="pill ref">参照</span></td>
+<td><span class="pill ref">参照</span><div class="ktag k-neutral">未修复核(有意,原始参照)</div></td>
 <td class="num">41.77 dB<div class="sub"></div></td></tr>
 <tr>
 <td class="name">90 帧逐帧原生 ESVR</td>
 <td class="what">与上行相同配方,90 帧各训一套,未修复核<div class="path">ESVR/output/esvr_original_per_frame/</div></td>
 <td class="scale"><b>3627 s</b>(40.3 s/帧)<br>93.77 MB</td><td class="counts"><b>23,673</b> / 帧(均值)<br>90 帧共 2,130,583<br><span class="sub">单帧 21,131 – 26,656</span><br><span class="sub">全部有效(每帧一个静态模型,无时间门)</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/esvr_original_per_frame__curve_full.jpg" data-cap="esvr_original_per_frame · 曲线"><img src="img/esvr_original_per_frame__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/esvr_original_per_frame__slice_full.jpg" data-cap="esvr_original_per_frame · 切片"><img src="img/esvr_original_per_frame__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/esvr_original_per_frame__dvr.mp4" data-cap="esvr_original_per_frame · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/esvr_original_per_frame__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill ref">参照</span></td>
+<td><span class="pill ref">参照</span><div class="ktag k-neutral">未修复核(有意,原始参照)</div></td>
 <td class="num">41.22 dB<div class="sub"></div></td></tr>
 <tr>
 <td class="name">90 帧逐帧,“修复核”对照</td>
 <td class="what">同上 + position 学习率 ÷4096;<b>实际经 activate 运行在未修复核上</b>(见 A 节说明),量到的是学习率 ÷4096 的代价<div class="path">output/experiments/vorts90_cuda_fixed_lr_only/</div></td>
 <td class="scale"><b>3466 s</b><br>≈ 90 MB</td><td class="counts"><b>24,084</b> / 帧(均值)<br>90 帧共 2,167,597<br><span class="sub">单帧 22,391 – 26,262</span><br><span class="sub">未修复核 + 位置几乎冻结</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/experiments__vorts90_cuda_fixed_lr_only__curve_full.jpg" data-cap="experiments__vorts90_cuda_fixed_lr_only · 曲线"><img src="img/experiments__vorts90_cuda_fixed_lr_only__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/experiments__vorts90_cuda_fixed_lr_only__slice_full.jpg" data-cap="experiments__vorts90_cuda_fixed_lr_only · 切片"><img src="img/experiments__vorts90_cuda_fixed_lr_only__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/experiments__vorts90_cuda_fixed_lr_only__dvr.mp4" data-cap="experiments__vorts90_cuda_fixed_lr_only · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/experiments__vorts90_cuda_fixed_lr_only__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill bad">未修复核 · 作废</span></td>
+<td><span class="pill bad">未修复核 · 作废</span><div class="ktag k-bad">未修复核</div></td>
 <td class="num">39.38 dB<div class="sub">38.65 – 39.94</div></td></tr>
 <tr>
 <td class="name">单帧,“修复核”对照</td>
 <td class="what">同首行 + position 学习率 ÷4096;<b>同样运行在未修复核上</b><div class="path">output/experiments/vorts0001_cuda_fixed_lr_only/</div></td>
 <td class="scale"><b>36.0 s</b></td><td class="counts"><b>22,424</b> 个高斯<br><span class="sub">20,000 → 峰值 83,546 → 剪枝后</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/experiments__vorts0001_cuda_fixed_lr_only__curve_full.jpg" data-cap="experiments__vorts0001_cuda_fixed_lr_only · 曲线"><img src="img/experiments__vorts0001_cuda_fixed_lr_only__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/experiments__vorts0001_cuda_fixed_lr_only__slice_full.jpg" data-cap="experiments__vorts0001_cuda_fixed_lr_only · 切片"><img src="img/experiments__vorts0001_cuda_fixed_lr_only__slice.jpg" alt="切片"><span>切片</span></button></div></td>
-<td><span class="pill bad">未修复核 · 作废</span></td>
+<td><span class="pill bad">未修复核 · 作废</span><div class="ktag k-bad">未修复核</div></td>
 <td class="num">39.94 dB<div class="sub"></div></td></tr>
 <tr>
 <td class="name">单帧,学习率+阈值都补偿</td>
 <td class="what">position 学习率 ÷4096 且 densify 阈值 ×4096,未修复核:阈值相对梯度大 4096 倍,增密被抑制<div class="path">output/experiments/vorts0001_cuda_fixed_matched_lr/</div></td>
 <td class="scale"><b>36.7 s</b></td><td class="counts"><b>5,409</b> 个高斯<br><span class="sub">20,000 → 几乎只剪不增</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/experiments__vorts0001_cuda_fixed_matched_lr__curve_full.jpg" data-cap="experiments__vorts0001_cuda_fixed_matched_lr · 曲线"><img src="img/experiments__vorts0001_cuda_fixed_matched_lr__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/experiments__vorts0001_cuda_fixed_matched_lr__slice_full.jpg" data-cap="experiments__vorts0001_cuda_fixed_matched_lr · 切片"><img src="img/experiments__vorts0001_cuda_fixed_matched_lr__slice.jpg" alt="切片"><span>切片</span></button></div></td>
-<td><span class="pill bad">未修复核 · 作废</span></td>
+<td><span class="pill bad">未修复核 · 作废</span><div class="ktag k-bad">未修复核</div></td>
 <td class="num">38.81 dB<div class="sub"></div></td></tr>
 <tr class="best">
 <td class="name">S1b_init20k_x1</td>
 <td class="what"><b>修复核,正确配方</b>:原生学习率不变,densify 阈值 ×4096(2.5e-7 → 1.024e-3),其余同首行<div class="note">与未修复核的 41.77 一致:修复本身无代价</div><div class="path">output/experiments/static_ceiling/S1b_init20k_x1_chunk_0/</div></td>
 <td class="scale"><b>22,400 步</b><br>0.93 MB</td><td class="counts"><b>21,247</b> 个高斯<br><span class="sub">峰值 63,332</span></td>
 <td class="vizcell"><span class="none">未生成</span></td>
-<td><span class="pill final">静态天花板</span></td>
+<td><span class="pill final">静态天花板</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">41.72 dB<div class="sub"></div></td></tr>
 <tr>
 <td class="name">S2b_init60k_x1</td>
 <td class="what">同上,初始 60k 基元<div class="path">output/experiments/static_ceiling/S2b_init60k_x1_chunk_0/</div></td>
 <td class="scale"><b>22,400 步</b><br>1.31 MB</td><td class="counts"><b>29,817</b> 个高斯<br><span class="sub">峰值 88,809</span></td>
 <td class="vizcell"><span class="none">未生成</span></td>
-<td><span class="pill ref">参照</span></td>
+<td><span class="pill ref">参照</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">42.29 dB<div class="sub"></div></td></tr>
 <tr>
 <td class="name">S3b_init20k_x3</td>
 <td class="what">同 S1b,全部调度 ×3<div class="note">更长训练比更多基元有效:比 S2b 高 2.4 dB,基元只有一半</div><div class="path">output/experiments/static_ceiling/S3b_init20k_x3_chunk_0/</div></td>
 <td class="scale"><b>67,200 步</b><br>0.71 MB</td><td class="counts"><b>16,243</b> 个高斯<br><span class="sub">峰值 58,938</span></td>
 <td class="vizcell"><span class="none">未生成</span></td>
-<td><span class="pill ref">参照</span></td>
+<td><span class="pill ref">参照</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">44.73 dB<div class="sub"></div></td></tr>
 <tr>
 <td class="name">S4b_init60k_x3_noprune</td>
 <td class="what">初始 60k,调度 ×3,关闭全局重要性剪枝<div class="path">output/experiments/static_ceiling/S4b_init60k_x3_noprune_chunk_0/</div></td>
 <td class="scale"><b>67,200 步</b><br>2.78 MB</td><td class="counts"><b>63,246</b> 个高斯<br><span class="sub">峰值 87,428</span></td>
 <td class="vizcell"><span class="none">未生成</span></td>
-<td><span class="pill ref">参照</span></td>
+<td><span class="pill ref">参照</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">47.05 dB<div class="sub"></div></td></tr>
 <tr class="best">
 <td class="name">S5b_init150k_x3_noprune</td>
 <td class="what">初始 150k,调度 ×3,关闭全局剪枝<div class="note"><b>这个基元 + 核在此数据上的实测天花板:单帧 49.7 dB</b>,90 帧逐帧约 550 MB</div><div class="path">output/experiments/static_ceiling/S5b_init150k_x3_noprune_chunk_0/</div></td>
 <td class="scale"><b>67,200 步</b><br>6.13 MB</td><td class="counts"><b>139,250</b> 个高斯<br><span class="sub">峰值 164,175</span></td>
 <td class="vizcell"><span class="none">未生成</span></td>
-<td><span class="pill final">静态天花板</span></td>
+<td><span class="pill final">静态天花板</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">49.67 dB<div class="sub"></div></td></tr>
 <tr>
 <td class="name">90 帧逐帧简化 ESVR</td>
-<td class="what"><code>train_dynamic.py --allow-single-frame</code>,固定 3 万图元,修复核<div class="path">output/esvr_per_frame_baseline/</div></td>
+<td class="what"><code>train_dynamic.py --allow-single-frame</code>,固定 3 万图元<div class="path">output/esvr_per_frame_baseline/</div></td>
 <td class="scale"><b>466 s</b><br>301 MB</td><td class="counts"><b>30,000</b> / 帧(均值)<br>90 帧共 2,700,000<br><span class="sub">单帧 30,000 – 30,000</span><br><span class="sub">固定,无增密</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/esvr_per_frame_baseline__curve_full.jpg" data-cap="esvr_per_frame_baseline · 曲线"><img src="img/esvr_per_frame_baseline__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/esvr_per_frame_baseline__slice_full.jpg" data-cap="esvr_per_frame_baseline · 切片"><img src="img/esvr_per_frame_baseline__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/esvr_per_frame_baseline__dvr.mp4" data-cap="esvr_per_frame_baseline · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/esvr_per_frame_baseline__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill ref">参照</span></td>
+<td><span class="pill ref">参照</span><div class="ktag k-warn">很可能修复核 · 未记录</div></td>
 <td class="num">38.86 dB<div class="sub"></div></td></tr>
 </tbody></table></div>
 <div class="callout warn"><b>2026-09-22 更正——“修复核对照”(39.94 / 39.38)实际运行在未修复核上。</b>把 09-13 那次单帧配置在真正的修复核上原样重跑,第一次增密就失控(20,000 → 4.85M 基元,OOM),而 09-13 的日志里基元峰值只有 83,537——同一条命令在同一个核上不可能两种表现;它是经 <code>run_vorts0001.sh</code> 的 <code>source activate</code> 跑在 <code>ESVR/.venv</code> 的未修复扩展上的。机制:修复后位置梯度大 4096 倍,按未修复梯度调的 densify 阈值 2.5e-7 会选中全部基元;当时把 OOM 归因于学习率并 ÷4096,而 Adam 对梯度尺度不敏感,那一步只是把位置冻住。<b>正确配方</b>是学习率不动、阈值 ×4096:S1b = 41.72 dB,与未修复核的 41.77 一致——<b>修复本身没有代价</b>,之前“−1.84 dB”是位置冻结的代价。</div>
-<div class="callout"><b>高斯数(从各帧最终迭代的 PLY 直接计数):</b>原生逐帧 90 帧共 2,130,583 个(均值 23,673)。<b>静态天花板(S 系列):</b>同一基元与核,单帧加到 139k 基元、67k 步,可达 <b>49.67 dB</b>(6.1 MB/帧,90 帧约 550 MB;原始数据 755 MB)。训练长度和容量同样重要:20k 基元训 3 倍长(S3b)44.7 dB,超过 60k 基元训 1 倍长(S2b)42.3。这给出两个参照:与动态模型同等每时刻容量(~2 万有用高斯)的静态模型充分训练可到 44–45 dB;50 dB 需要每时刻约 14 万个有效基元。原生配方的 <code>position_lr</code> 是在梯度被压缩 4096 倍的前提下调出来的,修复后必须 ÷4096 补偿才能稳定。</div></section>
+<div class="callout"><b>高斯数(从各帧最终迭代的 PLY 直接计数):</b>原生逐帧 90 帧共 2,130,583 个(均值 23,673)。<b>静态天花板(S 系列):</b>同一基元与核,单帧加到 139k 基元、67k 步,可达 <b>49.67 dB</b>(6.1 MB/帧,90 帧约 550 MB;原始数据 755 MB)。训练长度和容量同样重要:20k 基元训 3 倍长(S3b)44.7 dB,超过 60k 基元训 1 倍长(S2b)42.3。这给出两个参照:与动态模型同等每时刻容量(~2 万有用高斯)的静态模型充分训练可到 44–45 dB;50 dB 需要每时刻约 14 万个有效基元。<br><br><b>每帧优化预算对比(动态模型为何落后静态同容量模型 ~5 dB):</b>静态 S3b 每帧 67,200 步 × 64³ 块 ≈ 8,400 次全体积等效遍历;动态 I3 是 480k 步 ÷ 90 帧 ÷ 8 块 ≈ 670 次/帧,少 12.6 倍(120k 步的运行只有 167 次/帧)。ESVR 论文自己的 vorts 配方(22,400 步)也只是 2,800 次/帧,离收敛很远。原生配方的 <code>position_lr</code> 是在梯度被压缩 4096 倍的前提下调出来的,修复后必须 ÷4096 补偿才能稳定。</div></section>
 <section class="method"><div class="mh"><span class="letter">B</span><h2>Deformable-MLP</h2></div>
 <div class="lineage">Deformable 3D Gaussians → canonical 椭球 + 独立形变 MLP(位置+时间 Fourier 编码 → 位移/旋转/尺度偏移),分支 <code>codex/deformable-esvr</code></div>
 <div class="tablewrap"><table><thead><tr><th>版本</th><th>配置 / 路径</th><th>规模 / 耗时</th><th>锚点 / 高斯</th><th>可视化</th><th>状态</th><th class="num">平均 PSNR</th></tr></thead><tbody>
@@ -170,28 +180,28 @@ footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--line);font-si
 <td class="what">未修复核,PLY 热启动,21,401 图元固定<div class="path">output/dynamic/vorts90_full_geometry/</div></td>
 <td class="scale"><b>432 s</b> · 40,000 步<br>2.83 MB</td><td class="counts"><b>21,401</b> 个高斯<br>固定,无增密<br><span class="sub">全程全部活跃(一套 canonical + 形变网络)</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/dynamic__vorts90_full_geometry__curve_full.jpg" data-cap="dynamic__vorts90_full_geometry · 曲线"><img src="img/dynamic__vorts90_full_geometry__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/dynamic__vorts90_full_geometry__slice_full.jpg" data-cap="dynamic__vorts90_full_geometry · 切片"><img src="img/dynamic__vorts90_full_geometry__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/dynamic__vorts90_full_geometry__dvr.mp4" data-cap="dynamic__vorts90_full_geometry · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/dynamic__vorts90_full_geometry__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill old">已过时</span></td>
+<td><span class="pill old">已过时</span><div class="ktag k-neutral">未修复核(有意,原始参照)</div></td>
 <td class="num">22.35 dB<div class="sub"></div></td></tr>
 <tr>
 <td class="name">配置对齐版</td>
 <td class="what">修复核,随机初始化,3 万图元(对齐 ESVR4D),单一共享学习率<div class="path">output/dynamic/vorts90_matched_comparison/</div></td>
 <td class="scale"><b>1023 s</b> · 40,000 步<br>3.19 MB</td><td class="counts"><b>30,000</b> 个高斯<br>固定,无增密<br><span class="sub">全程全部活跃(一套 canonical + 形变网络)</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/dynamic__vorts90_matched_comparison__curve_full.jpg" data-cap="dynamic__vorts90_matched_comparison · 曲线"><img src="img/dynamic__vorts90_matched_comparison__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/dynamic__vorts90_matched_comparison__slice_full.jpg" data-cap="dynamic__vorts90_matched_comparison · 切片"><img src="img/dynamic__vorts90_matched_comparison__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/dynamic__vorts90_matched_comparison__dvr.mp4" data-cap="dynamic__vorts90_matched_comparison · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/dynamic__vorts90_matched_comparison__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill old">仅供对比</span></td>
+<td><span class="pill old">仅供对比</span><div class="ktag k-ok">修复核 · 脚本用 .venv/bin/python</div></td>
 <td class="num">25.96 dB<div class="sub"></div></td></tr>
 <tr>
 <td class="name">单变量学习率对照</td>
 <td class="what">配置对齐 + 学习率换成原生量级,但 4 组仍合并为一个值<div class="path">output/dynamic/vorts90_matched_native_lr/</div></td>
 <td class="scale"><b>488 s</b> · 40,000 步<br>3.19 MB</td><td class="counts"><b>30,000</b> 个高斯<br>固定,无增密<br><span class="sub">全程全部活跃(一套 canonical + 形变网络)</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/dynamic__vorts90_matched_native_lr__curve_full.jpg" data-cap="dynamic__vorts90_matched_native_lr · 曲线"><img src="img/dynamic__vorts90_matched_native_lr__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/dynamic__vorts90_matched_native_lr__slice_full.jpg" data-cap="dynamic__vorts90_matched_native_lr · 切片"><img src="img/dynamic__vorts90_matched_native_lr__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/dynamic__vorts90_matched_native_lr__dvr.mp4" data-cap="dynamic__vorts90_matched_native_lr · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/dynamic__vorts90_matched_native_lr__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill old">仅供对比</span></td>
+<td><span class="pill old">仅供对比</span><div class="ktag k-ok">修复核 · 脚本用 .venv/bin/python</div></td>
 <td class="num">24.21 dB<div class="sub"></div></td></tr>
 <tr class="best">
 <td class="name"><b>原生学习率结构修复版</b></td>
 <td class="what">position/scale/rotation/opacity 拆成 4 个独立学习率(取 ESVR 自身静态值)+ 形变网络自己的组<div class="path">output/dynamic/vorts90_native_canonical_lr/</div></td>
 <td class="scale"><b>500 s</b> · 40,000 步<br>3.19 MB</td><td class="counts"><b>30,000</b> 个高斯<br>固定,无增密<br><span class="sub">全程全部活跃(一套 canonical + 形变网络)</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/dynamic__vorts90_native_canonical_lr__curve_full.jpg" data-cap="dynamic__vorts90_native_canonical_lr · 曲线"><img src="img/dynamic__vorts90_native_canonical_lr__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/dynamic__vorts90_native_canonical_lr__slice_full.jpg" data-cap="dynamic__vorts90_native_canonical_lr · 切片"><img src="img/dynamic__vorts90_native_canonical_lr__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/dynamic__vorts90_native_canonical_lr__dvr.mp4" data-cap="dynamic__vorts90_native_canonical_lr · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/dynamic__vorts90_native_canonical_lr__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill final">当前结论</span></td>
+<td><span class="pill final">当前结论</span><div class="ktag k-ok">修复核 · 脚本用 .venv/bin/python</div></td>
 <td class="num">28.90 dB<div class="sub"></div></td></tr>
 </tbody></table></div>
 <div class="callout">未实现增密(donor 的判据基于相机屏幕梯度)。canonical 学习率取 ESVR 自身值而非 donor 原生值,与另两个方法的"用 donor 原生值"标准不一致,尚无定论。</div></section>
@@ -203,21 +213,21 @@ footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--line);font-si
 <td class="what">修复核,3 万图元固定,增密关闭,xyz/time/scale/opacity 共用 lr 5e-3<div class="path">output/esvr4d/vorts90_fixed_points/</div></td>
 <td class="scale"><b>179 s</b> · 40,000 步<br>2.29 MB</td><td class="counts"><b>30,000</b> 个 4D 高斯<br>固定,无增密<br><span class="sub">每时刻按时间边缘 &gt; 0.05 切片选入</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/esvr4d__vorts90_fixed_points__curve_full.jpg" data-cap="esvr4d__vorts90_fixed_points · 曲线"><img src="img/esvr4d__vorts90_fixed_points__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/esvr4d__vorts90_fixed_points__slice_full.jpg" data-cap="esvr4d__vorts90_fixed_points · 切片"><img src="img/esvr4d__vorts90_fixed_points__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/esvr4d__vorts90_fixed_points__dvr.mp4" data-cap="esvr4d__vorts90_fixed_points · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/esvr4d__vorts90_fixed_points__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill old">已定位为 bug</span></td>
+<td><span class="pill old">已定位为 bug</span><div class="ktag k-warn">很可能修复核 · 未记录</div></td>
 <td class="num">28.77 dB<div class="sub"></div></td></tr>
 <tr>
 <td class="name">原生 LR 结构(步数未对齐)</td>
 <td class="what">5 组原生学习率(xyz 1.6e-4→1.6e-6 等),但只跑 30,000 步<div class="path">output/esvr4d/vorts90_native_lr/</div></td>
 <td class="scale"><b>158 s</b> · 30,000 步<br>2.29 MB</td><td class="counts"><b>30,000</b> 个 4D 高斯<br>固定,无增密<br><span class="sub">每时刻按时间边缘 &gt; 0.05 切片选入</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/esvr4d__vorts90_native_lr__curve_full.jpg" data-cap="esvr4d__vorts90_native_lr · 曲线"><img src="img/esvr4d__vorts90_native_lr__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/esvr4d__vorts90_native_lr__slice_full.jpg" data-cap="esvr4d__vorts90_native_lr · 切片"><img src="img/esvr4d__vorts90_native_lr__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/esvr4d__vorts90_native_lr__dvr.mp4" data-cap="esvr4d__vorts90_native_lr · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/esvr4d__vorts90_native_lr__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill old">被步数对齐版取代</span></td>
+<td><span class="pill old">被步数对齐版取代</span><div class="ktag k-warn">很可能修复核 · 未记录</div></td>
 <td class="num">25.09 dB<div class="sub"></div></td></tr>
 <tr class="best">
 <td class="name"><b>原生 LR 结构(步数对齐)</b></td>
 <td class="what">同上,步数补齐到 40,000,与首行严格单变量;重载零误差<div class="path">output/esvr4d/vorts90_native_lr_40k/</div></td>
 <td class="scale"><b>213 s</b> · 40,000 步<br>2.29 MB</td><td class="counts"><b>30,000</b> 个 4D 高斯<br>固定,无增密<br><span class="sub">每时刻按时间边缘 &gt; 0.05 切片选入</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/esvr4d__vorts90_native_lr_40k__curve_full.jpg" data-cap="esvr4d__vorts90_native_lr_40k · 曲线"><img src="img/esvr4d__vorts90_native_lr_40k__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/esvr4d__vorts90_native_lr_40k__slice_full.jpg" data-cap="esvr4d__vorts90_native_lr_40k · 切片"><img src="img/esvr4d__vorts90_native_lr_40k__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/esvr4d__vorts90_native_lr_40k__dvr.mp4" data-cap="esvr4d__vorts90_native_lr_40k · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/esvr4d__vorts90_native_lr_40k__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill final">当前结论</span></td>
+<td><span class="pill final">当前结论</span><div class="ktag k-warn">很可能修复核 · 未记录</div></td>
 <td class="num">25.68 dB<div class="sub"></div></td></tr>
 </tbody></table></div>
 <div class="callout">原生位置学习率比共享值小 30–1000 倍,而 ESVR4D 的运动完全依赖 xyz 本身移动,所以修正学习率结构后 PSNR 反而下降 −3.09 dB(单变量验证)。增密实现了但关闭:开启后质量回退(加法渲染下 clone/split 原地翻倍),次要因素未查明。</div></section>
@@ -238,14 +248,14 @@ footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--line);font-si
 <td class="what">对齐 ESVR4D:40,000 步、6,000 锚点 × 5 子元、单一 lr 5e-3、feat_lr 5e-3、MLP lr 2e-3、增密关;clone/split 式增密代码<div class="note">children/feat_lr 均非论文原生值</div><div class="path">output/scaffold4d/vorts90_matched_comparison/</div></td>
 <td class="scale"><b>197 s</b> · 40,000 步<br>1.60 MB</td><td class="counts"><b>6,000</b> 锚点 × 5<br>= 30,000 高斯<br><span class="sub">活跃/查询 27,544</span><br><span class="sub">有用/查询 t=0.5 27,257</span><br><span class="sub">有用/查询 90 帧均值 <b>26,566</b> (25,194–27,280)</span><br><span class="sub">有用总数 28,974 (97%)</span><br><span class="sub">90 帧从未选入 37 (0%),其中“有用” 36</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/scaffold4d__vorts90_matched_comparison__curve_full.jpg" data-cap="scaffold4d__vorts90_matched_comparison · 曲线"><img src="img/scaffold4d__vorts90_matched_comparison__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/scaffold4d__vorts90_matched_comparison__slice_full.jpg" data-cap="scaffold4d__vorts90_matched_comparison · 切片"><img src="img/scaffold4d__vorts90_matched_comparison__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/scaffold4d__vorts90_matched_comparison__dvr.mp4" data-cap="scaffold4d__vorts90_matched_comparison · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/scaffold4d__vorts90_matched_comparison__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill old">已取代</span></td>
+<td><span class="pill old">已取代</span><div class="ktag k-warn">很可能修复核 · 未记录</div></td>
 <td class="num">25.03 dB<div class="sub">22.12 – 27.10</div></td></tr>
 <tr>
 <td class="name">原生配方版</td>
 <td class="what">论文原生 7 组学习率、120k 步、增密开(ESVR4D 借来的 clone/split,阈值 2e-4)、scale 下限 1e-4、初始幅值 0.5、速度上限 1<div class="note">训练中途退化:活跃子椭球 33 万 → 2.1 万,PSNR 30k 步时 ~26.5 后跌到 24.3;半数子椭球贴在 1e-4 下限永久失活;14k/40k 锚点全透明未剪</div><div class="path">output/scaffold4d/vorts90_native_recipe/</div></td>
 <td class="scale"><b>725 s</b> · 120,000 步<br>13.79 MB</td><td class="counts"><b>40,000</b> 锚点 × 10<br>= 400,000 高斯<br><span class="sub">活跃/查询 20,660</span><br><span class="sub">有用/查询 t=0.5 13,298</span><br><span class="sub">有用/查询 90 帧均值 <b>12,394</b> (9,303–13,415)</span><br><span class="sub">有用总数 103,086 (26%)</span><br><span class="sub">90 帧从未选入 204,151 (51%),其中“有用” 17,310</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/scaffold4d__vorts90_native_recipe__curve_full.jpg" data-cap="scaffold4d__vorts90_native_recipe · 曲线"><img src="img/scaffold4d__vorts90_native_recipe__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/scaffold4d__vorts90_native_recipe__slice_full.jpg" data-cap="scaffold4d__vorts90_native_recipe · 切片"><img src="img/scaffold4d__vorts90_native_recipe__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/scaffold4d__vorts90_native_recipe__dvr.mp4" data-cap="scaffold4d__vorts90_native_recipe · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/scaffold4d__vorts90_native_recipe__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill old">已取代</span></td>
+<td><span class="pill old">已取代</span><div class="ktag k-ok">修复核 · 指纹判定</div></td>
 <td class="num">24.35 dB<div class="sub">21.94 – 25.43</div></td></tr>
 </tbody></table></div><h3 class="grp">D.2 修复适配后的留一法消融 —— 全部经由未修复 CUDA 核训练(作废,仅作记录)</h3>
 <div class="callout warn" style="margin:0 0 10px"><b>为什么作废:</b><code>ESVR-4dgs/.venv/bin/activate</code> 是 9 月 4 日随目录从 <code>ESVR/</code> 复制来的,硬编码 <code>VIRTUAL_ENV=…/ESVR/.venv</code>;<code>source activate && python</code> 实际运行原文件夹的解释器和未修复扩展(位置梯度 ×1/4096)。有限差分:经 activate 比值 36 = 1/dVoxel²,经 <code>.venv/bin/python</code> 比值 1.00。下列 15 组全部如此。前向(PSNR 的度量)正确,错的是训练信号;结论方向在修复核上全部复现(见 D.3)。</div><div class="tablewrap"><table><thead><tr><th>运行</th><th>相对参照的改动 / 路径</th><th>规模 / 耗时</th><th>锚点 / 高斯</th><th>可视化</th><th>状态</th><th class="num">平均 PSNR</th></tr></thead><tbody>
@@ -254,84 +264,84 @@ footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--line);font-si
 <td class="what">全部适配修复 + 上游式生长;速度上限 8、初始幅值 0.1、锚点按 GT 强度采样(data init)<div class="path">output/scaffold4d/ablation/B_full/</div></td>
 <td class="scale"><b>1890 s</b> · 120,000 步<br>13.31 MB</td><td class="counts"><b>40,000</b> 锚点 × 10<br>= 400,000 高斯<br><span class="sub">活跃/查询 23,313</span><br><span class="sub">有用/查询 t=0.5 13,291</span><br><span class="sub">有用/查询 90 帧均值 <b>12,329</b> (9,429–13,814)</span><br><span class="sub">有用总数 127,420 (32%)</span><br><span class="sub">90 帧从未选入 88,311 (22%),其中“有用” 10,786</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/scaffold4d__ablation__B_full__curve_full.jpg" data-cap="scaffold4d__ablation__B_full · 曲线"><img src="img/scaffold4d__ablation__B_full__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/scaffold4d__ablation__B_full__slice_full.jpg" data-cap="scaffold4d__ablation__B_full · 切片"><img src="img/scaffold4d__ablation__B_full__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/scaffold4d__ablation__B_full__dvr.mp4" data-cap="scaffold4d__ablation__B_full · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/scaffold4d__ablation__B_full__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill bad">未修复核 · 作废</span></td>
+<td><span class="pill bad">未修复核 · 作废</span><div class="ktag k-bad">未修复核</div></td>
 <td class="num">31.39 dB<div class="sub">28.92 – 32.70</div></td></tr>
 <tr>
 <td class="name">E_floor_old</td>
 <td class="what">scale 下限改回 1e-4(0.0064 体素)<div class="note">−3.32 dB:小于 0.45 体素的基元碰不到体素中心,零梯度、永久死亡</div><div class="path">output/scaffold4d/ablation/E_floor_old/</div></td>
 <td class="scale"><b>1360 s</b> · 120,000 步<br>13.31 MB</td><td class="counts"><b>40,000</b> 锚点 × 10<br>= 400,000 高斯<br><span class="sub">活跃/查询 12,205</span><br><span class="sub">有用/查询 t=0.5 7,356</span><br><span class="sub">有用/查询 90 帧均值 <b>7,177</b> (5,455–7,805)</span><br><span class="sub">有用总数 65,385 (16%)</span><br><span class="sub">90 帧从未选入 268,308 (67%),其中“有用” 8,493</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/scaffold4d__ablation__E_floor_old__curve_full.jpg" data-cap="scaffold4d__ablation__E_floor_old · 曲线"><img src="img/scaffold4d__ablation__E_floor_old__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/scaffold4d__ablation__E_floor_old__slice_full.jpg" data-cap="scaffold4d__ablation__E_floor_old · 切片"><img src="img/scaffold4d__ablation__E_floor_old__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/scaffold4d__ablation__E_floor_old__dvr.mp4" data-cap="scaffold4d__ablation__E_floor_old · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/scaffold4d__ablation__E_floor_old__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill bad">未修复核 · 作废</span></td>
+<td><span class="pill bad">未修复核 · 作废</span><div class="ktag k-bad">未修复核</div></td>
 <td class="num">28.07 dB<div class="sub">25.95 – 28.90</div></td></tr>
 <tr>
 <td class="name">A_fixed6000</td>
 <td class="what">关闭生长,6,000 锚点固定<div class="note">−1.43 dB</div><div class="path">output/scaffold4d/ablation/A_fixed6000/</div></td>
 <td class="scale"><b>1695 s</b> · 120,000 步<br>2.02 MB</td><td class="counts"><b>6,000</b> 锚点 × 10<br>= 60,000 高斯<br><span class="sub">活跃/查询 5,396</span><br><span class="sub">有用/查询 t=0.5 5,362</span><br><span class="sub">有用/查询 90 帧均值 <b>4,870</b> (3,389–5,503)</span><br><span class="sub">有用总数 48,231 (80%)</span><br><span class="sub">90 帧从未选入 14,114 (24%),其中“有用” 8,950</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/scaffold4d__ablation__A_fixed6000__curve_full.jpg" data-cap="scaffold4d__ablation__A_fixed6000 · 曲线"><img src="img/scaffold4d__ablation__A_fixed6000__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/scaffold4d__ablation__A_fixed6000__slice_full.jpg" data-cap="scaffold4d__ablation__A_fixed6000 · 切片"><img src="img/scaffold4d__ablation__A_fixed6000__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/scaffold4d__ablation__A_fixed6000__dvr.mp4" data-cap="scaffold4d__ablation__A_fixed6000 · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/scaffold4d__ablation__A_fixed6000__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill bad">未修复核 · 作废</span></td>
+<td><span class="pill bad">未修复核 · 作废</span><div class="ktag k-bad">未修复核</div></td>
 <td class="num">29.96 dB<div class="sub">27.06 – 30.82</div></td></tr>
 <tr>
 <td class="name">H_old_optimizer</td>
 <td class="what">Adam eps 1e-8 + 全局梯度裁剪 1.0(旧设置)<div class="note">−0.59;未修复核下梯度与 eps 同量级</div><div class="path">output/scaffold4d/ablation/H_old_optimizer/</div></td>
 <td class="scale"><b>1327 s</b> · 120,000 步<br>13.31 MB</td><td class="counts"><b>40,000</b> 锚点 × 10<br>= 400,000 高斯<br><span class="sub">活跃/查询 25,784</span><br><span class="sub">有用/查询 t=0.5 4,893</span><br><span class="sub">有用/查询 90 帧均值 <b>4,452</b> (3,124–4,955)</span><br><span class="sub">有用总数 33,522 (8%)</span><br><span class="sub">90 帧从未选入 176,603 (44%),其中“有用” 4,135</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/scaffold4d__ablation__H_old_optimizer__curve_full.jpg" data-cap="scaffold4d__ablation__H_old_optimizer · 曲线"><img src="img/scaffold4d__ablation__H_old_optimizer__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/scaffold4d__ablation__H_old_optimizer__slice_full.jpg" data-cap="scaffold4d__ablation__H_old_optimizer · 切片"><img src="img/scaffold4d__ablation__H_old_optimizer__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/scaffold4d__ablation__H_old_optimizer__dvr.mp4" data-cap="scaffold4d__ablation__H_old_optimizer · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/scaffold4d__ablation__H_old_optimizer__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill bad">未修复核 · 作废</span></td>
+<td><span class="pill bad">未修复核 · 作废</span><div class="ktag k-bad">未修复核</div></td>
 <td class="num">30.80 dB<div class="sub">28.45 – 31.71</div></td></tr>
 <tr>
 <td class="name">G_init_random</td>
 <td class="what">锚点均匀随机初始化<div class="note">0.00</div><div class="path">output/scaffold4d/ablation/G_init_random/</div></td>
 <td class="scale"><b>1345 s</b> · 120,000 步<br>13.31 MB</td><td class="counts"><b>40,000</b> 锚点 × 10<br>= 400,000 高斯<br><span class="sub">活跃/查询 24,710</span><br><span class="sub">有用/查询 t=0.5 10,859</span><br><span class="sub">有用/查询 90 帧均值 <b>10,300</b> (7,842–11,670)</span><br><span class="sub">有用总数 103,898 (26%)</span><br><span class="sub">90 帧从未选入 94,181 (24%),其中“有用” 8,448</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/scaffold4d__ablation__G_init_random__curve_full.jpg" data-cap="scaffold4d__ablation__G_init_random · 曲线"><img src="img/scaffold4d__ablation__G_init_random__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/scaffold4d__ablation__G_init_random__slice_full.jpg" data-cap="scaffold4d__ablation__G_init_random · 切片"><img src="img/scaffold4d__ablation__G_init_random__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/scaffold4d__ablation__G_init_random__dvr.mp4" data-cap="scaffold4d__ablation__G_init_random · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/scaffold4d__ablation__G_init_random__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill bad">未修复核 · 作废</span></td>
+<td><span class="pill bad">未修复核 · 作废</span><div class="ktag k-bad">未修复核</div></td>
 <td class="num">31.39 dB<div class="sub">29.20 – 32.41</div></td></tr>
 <tr>
 <td class="name">F_opacity_init0.5</td>
 <td class="what">初始幅值 0.5<div class="note">+0.13</div><div class="path">output/scaffold4d/ablation/F_opacity_init0.5/</div></td>
 <td class="scale"><b>1346 s</b> · 120,000 步<br>13.31 MB</td><td class="counts"><b>40,000</b> 锚点 × 10<br>= 400,000 高斯<br><span class="sub">活跃/查询 18,981</span><br><span class="sub">有用/查询 t=0.5 9,973</span><br><span class="sub">有用/查询 90 帧均值 <b>9,535</b> (7,453–10,557)</span><br><span class="sub">有用总数 96,738 (24%)</span><br><span class="sub">90 帧从未选入 132,571 (33%),其中“有用” 7,896</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/scaffold4d__ablation__F_opacity_init0.5__curve_full.jpg" data-cap="scaffold4d__ablation__F_opacity_init0.5 · 曲线"><img src="img/scaffold4d__ablation__F_opacity_init0.5__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/scaffold4d__ablation__F_opacity_init0.5__slice_full.jpg" data-cap="scaffold4d__ablation__F_opacity_init0.5 · 切片"><img src="img/scaffold4d__ablation__F_opacity_init0.5__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/scaffold4d__ablation__F_opacity_init0.5__dvr.mp4" data-cap="scaffold4d__ablation__F_opacity_init0.5 · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/scaffold4d__ablation__F_opacity_init0.5__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill bad">未修复核 · 作废</span></td>
+<td><span class="pill bad">未修复核 · 作废</span><div class="ktag k-bad">未修复核</div></td>
 <td class="num">31.52 dB<div class="sub">29.84 – 32.65</div></td></tr>
 <tr>
 <td class="name">I_no_sigma_weight</td>
 <td class="what">γ=0,即普通 Scaffold-GS 统计<div class="note">+0.17</div><div class="path">output/scaffold4d/ablation/I_no_sigma_weight/</div></td>
 <td class="scale"><b>1296 s</b> · 120,000 步<br>13.31 MB</td><td class="counts"><b>40,000</b> 锚点 × 10<br>= 400,000 高斯<br><span class="sub">活跃/查询 23,653</span><br><span class="sub">有用/查询 t=0.5 13,078</span><br><span class="sub">有用/查询 90 帧均值 <b>11,871</b> (8,050–13,445)</span><br><span class="sub">有用总数 116,758 (29%)</span><br><span class="sub">90 帧从未选入 81,343 (20%),其中“有用” 7,821</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/scaffold4d__ablation__I_no_sigma_weight__curve_full.jpg" data-cap="scaffold4d__ablation__I_no_sigma_weight · 曲线"><img src="img/scaffold4d__ablation__I_no_sigma_weight__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/scaffold4d__ablation__I_no_sigma_weight__slice_full.jpg" data-cap="scaffold4d__ablation__I_no_sigma_weight · 切片"><img src="img/scaffold4d__ablation__I_no_sigma_weight__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/scaffold4d__ablation__I_no_sigma_weight__dvr.mp4" data-cap="scaffold4d__ablation__I_no_sigma_weight · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/scaffold4d__ablation__I_no_sigma_weight__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill bad">未修复核 · 作废</span></td>
+<td><span class="pill bad">未修复核 · 作废</span><div class="ktag k-bad">未修复核</div></td>
 <td class="num">31.55 dB<div class="sub">29.47 – 32.82</div></td></tr>
 <tr>
 <td class="name">D_flow1</td>
 <td class="what">速度上限改回原生 1<div class="note">+0.52,在种子噪声内</div><div class="path">output/scaffold4d/ablation/D_flow1/</div></td>
 <td class="scale"><b>1360 s</b> · 120,000 步<br>13.31 MB</td><td class="counts"><b>40,000</b> 锚点 × 10<br>= 400,000 高斯<br><span class="sub">活跃/查询 26,014</span><br><span class="sub">有用/查询 t=0.5 18,494</span><br><span class="sub">有用/查询 90 帧均值 <b>16,751</b> (12,152–18,784)</span><br><span class="sub">有用总数 175,746 (44%)</span><br><span class="sub">90 帧从未选入 63,175 (16%),其中“有用” 13,471</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/scaffold4d__ablation__D_flow1__curve_full.jpg" data-cap="scaffold4d__ablation__D_flow1 · 曲线"><img src="img/scaffold4d__ablation__D_flow1__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/scaffold4d__ablation__D_flow1__slice_full.jpg" data-cap="scaffold4d__ablation__D_flow1 · 切片"><img src="img/scaffold4d__ablation__D_flow1__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/scaffold4d__ablation__D_flow1__dvr.mp4" data-cap="scaffold4d__ablation__D_flow1 · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/scaffold4d__ablation__D_flow1__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill bad">未修复核 · 作废</span></td>
+<td><span class="pill bad">未修复核 · 作废</span><div class="ktag k-bad">未修复核</div></td>
 <td class="num">31.91 dB<div class="sub">30.36 – 32.95</div></td></tr>
 <tr>
 <td class="name">C_cap100k</td>
 <td class="what">锚点上限 100k<div class="note">+0.78</div><div class="path">output/scaffold4d/ablation/C_cap100k/</div></td>
 <td class="scale"><b>1888 s</b> · 120,000 步<br>33.23 MB</td><td class="counts"><b>100,000</b> 锚点 × 10<br>= 1,000,000 高斯<br><span class="sub">活跃/查询 48,607</span><br><span class="sub">有用/查询 t=0.5 13,946</span><br><span class="sub">有用/查询 90 帧均值 <b>12,918</b> (9,649–14,677)</span><br><span class="sub">有用总数 134,306 (13%)</span><br><span class="sub">90 帧从未选入 286,204 (29%),其中“有用” 8,687</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/scaffold4d__ablation__C_cap100k__curve_full.jpg" data-cap="scaffold4d__ablation__C_cap100k · 曲线"><img src="img/scaffold4d__ablation__C_cap100k__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/scaffold4d__ablation__C_cap100k__slice_full.jpg" data-cap="scaffold4d__ablation__C_cap100k · 切片"><img src="img/scaffold4d__ablation__C_cap100k__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/scaffold4d__ablation__C_cap100k__dvr.mp4" data-cap="scaffold4d__ablation__C_cap100k · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/scaffold4d__ablation__C_cap100k__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill bad">未修复核 · 作废</span></td>
+<td><span class="pill bad">未修复核 · 作废</span><div class="ktag k-bad">未修复核</div></td>
 <td class="num">32.17 dB<div class="sub">29.58 – 33.52</div></td></tr>
 <tr>
 <td class="name">B_full_s1 / s2</td>
 <td class="what">B 换种子 1(s2 = 31.59)<div class="note">B 三种子 31.62 ± 0.24</div><div class="path">output/scaffold4d/ablation/B_full_s1/</div></td>
 <td class="scale"><b>1354 s</b> · 120,000 步<br>13.31 MB</td><td class="counts"><b>40,000</b> 锚点 × 10<br>= 400,000 高斯<br><span class="sub">活跃/查询 27,117</span><br><span class="sub">有用/查询 t=0.5 14,378</span><br><span class="sub">有用/查询 90 帧均值 <b>13,665</b> (10,045–15,802)</span><br><span class="sub">有用总数 140,755 (35%)</span><br><span class="sub">90 帧从未选入 90,588 (23%),其中“有用” 11,406</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/scaffold4d__ablation__B_full_s1__curve_full.jpg" data-cap="scaffold4d__ablation__B_full_s1 · 曲线"><img src="img/scaffold4d__ablation__B_full_s1__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/scaffold4d__ablation__B_full_s1__slice_full.jpg" data-cap="scaffold4d__ablation__B_full_s1 · 切片"><img src="img/scaffold4d__ablation__B_full_s1__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/scaffold4d__ablation__B_full_s1__dvr.mp4" data-cap="scaffold4d__ablation__B_full_s1 · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/scaffold4d__ablation__B_full_s1__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill bad">未修复核 · 作废</span></td>
+<td><span class="pill bad">未修复核 · 作废</span><div class="ktag k-bad">未修复核</div></td>
 <td class="num">31.87 dB<div class="sub">30.52 – 33.36</div></td></tr>
 <tr>
 <td class="name">J_default_s42 / s1 / s2</td>
 <td class="what">当前默认(速度 1、幅值 0.5、随机初始化)三种子:31.31 / 32.13 / 31.41<div class="note">31.61 ± 0.45;与 B 无差别;种子噪声最大 0.8 dB</div><div class="path">output/scaffold4d/ablation/J_default_s42/</div></td>
 <td class="scale"><b>1356 s</b> · 120,000 步<br>13.31 MB</td><td class="counts"><b>40,000</b> 锚点 × 10<br>= 400,000 高斯<br><span class="sub">活跃/查询 24,979</span><br><span class="sub">有用/查询 t=0.5 15,041</span><br><span class="sub">有用/查询 90 帧均值 <b>14,237</b> (10,362–15,754)</span><br><span class="sub">有用总数 143,330 (36%)</span><br><span class="sub">90 帧从未选入 74,430 (19%),其中“有用” 13,097</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/scaffold4d__ablation__J_default_s42__curve_full.jpg" data-cap="scaffold4d__ablation__J_default_s42 · 曲线"><img src="img/scaffold4d__ablation__J_default_s42__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/scaffold4d__ablation__J_default_s42__slice_full.jpg" data-cap="scaffold4d__ablation__J_default_s42 · 切片"><img src="img/scaffold4d__ablation__J_default_s42__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/scaffold4d__ablation__J_default_s42__dvr.mp4" data-cap="scaffold4d__ablation__J_default_s42 · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/scaffold4d__ablation__J_default_s42__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill bad">未修复核 · 作废</span></td>
+<td><span class="pill bad">未修复核 · 作废</span><div class="ktag k-bad">未修复核</div></td>
 <td class="num">31.30 dB<div class="sub">29.66 – 32.29</div></td></tr>
 <tr>
 <td class="name">K_fixed6000_flow1</td>
 <td class="what">6,000 固定 + 当前默认(与 A 差三项,非单变量)<div class="path">output/scaffold4d/ablation/K_fixed6000_flow1/</div></td>
 <td class="scale"><b>1136 s</b> · 120,000 步<br>2.02 MB</td><td class="counts"><b>6,000</b> 锚点 × 10<br>= 60,000 高斯<br><span class="sub">活跃/查询 7,272</span><br><span class="sub">有用/查询 t=0.5 7,713</span><br><span class="sub">有用/查询 90 帧均值 <b>7,077</b> (4,983–7,813)</span><br><span class="sub">有用总数 53,307 (89%)</span><br><span class="sub">90 帧从未选入 18,893 (31%),其中“有用” 15,129</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/scaffold4d__ablation__K_fixed6000_flow1__curve_full.jpg" data-cap="scaffold4d__ablation__K_fixed6000_flow1 · 曲线"><img src="img/scaffold4d__ablation__K_fixed6000_flow1__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/scaffold4d__ablation__K_fixed6000_flow1__slice_full.jpg" data-cap="scaffold4d__ablation__K_fixed6000_flow1 · 切片"><img src="img/scaffold4d__ablation__K_fixed6000_flow1__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/scaffold4d__ablation__K_fixed6000_flow1__dvr.mp4" data-cap="scaffold4d__ablation__K_fixed6000_flow1 · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/scaffold4d__ablation__K_fixed6000_flow1__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill bad">未修复核 · 作废</span></td>
+<td><span class="pill bad">未修复核 · 作废</span><div class="ktag k-bad">未修复核</div></td>
 <td class="num">29.20 dB<div class="sub">26.38 – 30.36</div></td></tr>
 </tbody></table></div><h3 class="grp">D.3 修复核重跑(当前有效结果)</h3><div class="tablewrap"><table><thead><tr><th>运行</th><th>相对参照的改动 / 路径</th><th>规模 / 耗时</th><th>锚点 / 高斯</th><th>可视化</th><th>状态</th><th class="num">平均 PSNR</th></tr></thead><tbody>
 <tr>
@@ -339,35 +349,35 @@ footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--line);font-si
 <td class="what">当前默认配置(见上方共同配方),40k 上限<div class="note">与未修复核同配置(31.61 ± 0.45)持平</div><div class="path">output/scaffold4d/fixed_kernel/F_default_s42/</div></td>
 <td class="scale"><b>1203 s</b> · 120,000 步<br>13.31 MB<br><span class="sub">压缩后 <b>2.9 MB</b> · 31.92 dB (+0.002)</span></td><td class="counts"><b>40,000</b> 锚点 × 10<br>= 400,000 高斯<br><span class="sub">活跃/查询 36,651</span><br><span class="sub">有用/查询 t=0.5 17,476</span><br><span class="sub">有用/查询 90 帧均值 <b>15,518</b> (9,681–17,516)</span><br><span class="sub">有用总数 92,353 (23%)</span><br><span class="sub">90 帧从未选入 92,509 (23%),其中“有用” 1,575</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/scaffold4d__fixed_kernel__F_default_s42__curve_full.jpg" data-cap="scaffold4d__fixed_kernel__F_default_s42 · 曲线"><img src="img/scaffold4d__fixed_kernel__F_default_s42__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/scaffold4d__fixed_kernel__F_default_s42__slice_full.jpg" data-cap="scaffold4d__fixed_kernel__F_default_s42 · 切片"><img src="img/scaffold4d__fixed_kernel__F_default_s42__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/scaffold4d__fixed_kernel__F_default_s42__dvr.mp4" data-cap="scaffold4d__fixed_kernel__F_default_s42 · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/scaffold4d__fixed_kernel__F_default_s42__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill final">当前结论</span></td>
+<td><span class="pill final">当前结论</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">31.91 dB<div class="sub">29.67 – 33.50</div></td></tr>
 <tr>
 <td class="name">F_default_s1 / s2</td>
 <td class="what">同上,种子 1(s2 = 31.52)<div class="note">三种子 31.84 ± 0.29 dB —— 修复核下的噪声尺子;≤ 0.6 dB 的单次差别不作结论</div><div class="path">output/scaffold4d/fixed_kernel/F_default_s1/</div></td>
 <td class="scale"><b>1713 s</b> · 120,000 步<br>13.31 MB</td><td class="counts"><b>40,000</b> 锚点 × 10<br>= 400,000 高斯<br><span class="sub">活跃/查询 38,905</span><br><span class="sub">有用/查询 t=0.5 20,871</span><br><span class="sub">有用/查询 90 帧均值 <b>19,137</b> (13,805–21,247)</span><br><span class="sub">有用总数 105,244 (26%)</span><br><span class="sub">90 帧从未选入 92,608 (23%),其中“有用” 1,403</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/scaffold4d__fixed_kernel__F_default_s1__curve_full.jpg" data-cap="scaffold4d__fixed_kernel__F_default_s1 · 曲线"><img src="img/scaffold4d__fixed_kernel__F_default_s1__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/scaffold4d__fixed_kernel__F_default_s1__slice_full.jpg" data-cap="scaffold4d__fixed_kernel__F_default_s1 · 切片"><img src="img/scaffold4d__fixed_kernel__F_default_s1__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/scaffold4d__fixed_kernel__F_default_s1__dvr.mp4" data-cap="scaffold4d__fixed_kernel__F_default_s1 · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/scaffold4d__fixed_kernel__F_default_s1__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill final">当前结论</span></td>
+<td><span class="pill final">当前结论</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">32.09 dB<div class="sub">30.17 – 33.44</div></td></tr>
 <tr class="best">
 <td class="name"><b>F_cap100k</b></td>
 <td class="what">锚点上限 100k<div class="note">+1.03 dB;预算未饱和</div><div class="path">output/scaffold4d/fixed_kernel/F_cap100k/</div></td>
 <td class="scale"><b>1473 s</b> · 120,000 步<br>33.23 MB</td><td class="counts"><b>100,000</b> 锚点 × 10<br>= 1,000,000 高斯<br><span class="sub">活跃/查询 47,854</span><br><span class="sub">有用/查询 t=0.5 15,420</span><br><span class="sub">有用/查询 90 帧均值 <b>14,334</b> (9,491–16,122)</span><br><span class="sub">有用总数 80,628 (8%)</span><br><span class="sub">90 帧从未选入 550,394 (55%),其中“有用” 532</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/scaffold4d__fixed_kernel__F_cap100k__curve_full.jpg" data-cap="scaffold4d__fixed_kernel__F_cap100k · 曲线"><img src="img/scaffold4d__fixed_kernel__F_cap100k__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/scaffold4d__fixed_kernel__F_cap100k__slice_full.jpg" data-cap="scaffold4d__fixed_kernel__F_cap100k · 切片"><img src="img/scaffold4d__fixed_kernel__F_cap100k__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/scaffold4d__fixed_kernel__F_cap100k__dvr.mp4" data-cap="scaffold4d__fixed_kernel__F_cap100k · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/scaffold4d__fixed_kernel__F_cap100k__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill final">当前结论</span></td>
+<td><span class="pill final">当前结论</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">32.95 dB<div class="sub">30.40 – 33.97</div></td></tr>
 <tr>
 <td class="name">F_fixed6000</td>
 <td class="what">关闭生长,6,000 锚点固定<div class="note">−2.53 dB:上游式生长在加法渲染下有效</div><div class="path">output/scaffold4d/fixed_kernel/F_fixed6000/</div></td>
 <td class="scale"><b>1122 s</b> · 120,000 步<br>2.02 MB</td><td class="counts"><b>6,000</b> 锚点 × 10<br>= 60,000 高斯<br><span class="sub">活跃/查询 32,065</span><br><span class="sub">有用/查询 t=0.5 20,773</span><br><span class="sub">有用/查询 90 帧均值 <b>19,469</b> (15,994–20,835)</span><br><span class="sub">有用总数 40,830 (68%)</span><br><span class="sub">90 帧从未选入 1,313 (2%),其中“有用” 203</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/scaffold4d__fixed_kernel__F_fixed6000__curve_full.jpg" data-cap="scaffold4d__fixed_kernel__F_fixed6000 · 曲线"><img src="img/scaffold4d__fixed_kernel__F_fixed6000__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/scaffold4d__fixed_kernel__F_fixed6000__slice_full.jpg" data-cap="scaffold4d__fixed_kernel__F_fixed6000 · 切片"><img src="img/scaffold4d__fixed_kernel__F_fixed6000__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/scaffold4d__fixed_kernel__F_fixed6000__dvr.mp4" data-cap="scaffold4d__fixed_kernel__F_fixed6000 · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/scaffold4d__fixed_kernel__F_fixed6000__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill final">当前结论</span></td>
+<td><span class="pill final">当前结论</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">29.39 dB<div class="sub">25.35 – 30.46</div></td></tr>
 <tr>
 <td class="name">F_floor_old</td>
 <td class="what">scale 下限改回 1e-4<div class="note">−2.95 dB</div><div class="path">output/scaffold4d/fixed_kernel/F_floor_old/</div></td>
 <td class="scale"><b>1506 s</b> · 120,000 步<br>13.31 MB</td><td class="counts"><b>40,000</b> 锚点 × 10<br>= 400,000 高斯<br><span class="sub">活跃/查询 12,778</span><br><span class="sub">有用/查询 t=0.5 8,228</span><br><span class="sub">有用/查询 90 帧均值 <b>7,611</b> (4,592–8,454)</span><br><span class="sub">有用总数 50,632 (13%)</span><br><span class="sub">90 帧从未选入 262,517 (66%),其中“有用” 1,570</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/scaffold4d__fixed_kernel__F_floor_old__curve_full.jpg" data-cap="scaffold4d__fixed_kernel__F_floor_old · 曲线"><img src="img/scaffold4d__fixed_kernel__F_floor_old__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/scaffold4d__fixed_kernel__F_floor_old__slice_full.jpg" data-cap="scaffold4d__fixed_kernel__F_floor_old · 切片"><img src="img/scaffold4d__fixed_kernel__F_floor_old__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/scaffold4d__fixed_kernel__F_floor_old__dvr.mp4" data-cap="scaffold4d__fixed_kernel__F_floor_old · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/scaffold4d__fixed_kernel__F_floor_old__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill final">当前结论</span></td>
+<td><span class="pill final">当前结论</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">28.97 dB<div class="sub">25.95 – 29.84</div></td></tr>
 </tbody></table></div>
 <div class="callout"><b>修复核 checkpoint 诊断(F_default_s42):</b>40 万子椭球中只有 23% 有用(强度 > 1/255 且不贴下限),39% 的锚点没有一个有用孩子,每次渲染选入的孩子里 60% 一个体素都碰不到(ESVR <code>prune_zeros</code> 规则),每时刻有用孩子 1–1.7 万,而逐帧 ESVR 每帧约 2.4 万。上游的 <code>min_opacity</code> 剪枝在 sigmoid 下失效(整个训练只删 1–70 个锚点)。这是 40 dB 之前必须解决的容量问题。</div>
@@ -378,77 +388,77 @@ footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--line);font-si
 <td class="what">基线(当前默认)<div class="path">output/scaffold4d/screen_fixed/T0_control/</div></td>
 <td class="scale">40,000 步<br>13.3 MB</td><td class="counts"><b>40,000</b> 锚点 × 10<br>= 400,000 高斯<br><span class="sub">活跃/查询 46,635</span><br><span class="sub">有用/查询 t=0.5 21,902</span><br><span class="sub">有用/查询 90 帧均值 <b>19,662</b> (12,439–22,091)</span><br><span class="sub">有用总数 78,216 (20%)</span><br><span class="sub">90 帧从未选入 121,700 (30%),其中“有用” 390</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/screen__T0_control__curve_full.jpg" data-cap="screen__T0_control · 曲线"><img src="img/screen__T0_control__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/screen__T0_control__slice_full.jpg" data-cap="screen__T0_control · 切片"><img src="img/screen__T0_control__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/screen__T0_control__dvr.mp4" data-cap="screen__T0_control · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/screen__T0_control__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill final">筛选</span></td>
+<td><span class="pill final">筛选</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">30.82 dB<div class="sub">27.91 – 32.49</div></td></tr>
 <tr>
 <td class="name">T1_volreg_visible</td>
 <td class="what">体积正则只作用可见孩子(<code>--vol-reg-visible</code>)<div class="note">−0.04</div><div class="path">output/scaffold4d/screen_fixed/T1_volreg_visible/</div></td>
 <td class="scale">40,000 步<br>13.3 MB</td><td class="counts"><b>40,000</b> 锚点 × 10<br>= 400,000 高斯<br><span class="sub">活跃/查询 41,609</span><br><span class="sub">有用/查询 t=0.5 13,715</span><br><span class="sub">有用/查询 90 帧均值 <b>12,142</b> (7,617–13,876)</span><br><span class="sub">有用总数 48,153 (12%)</span><br><span class="sub">90 帧从未选入 138,872 (35%),其中“有用” 170</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/screen__T1_volreg_visible__curve_full.jpg" data-cap="screen__T1_volreg_visible · 曲线"><img src="img/screen__T1_volreg_visible__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/screen__T1_volreg_visible__slice_full.jpg" data-cap="screen__T1_volreg_visible · 切片"><img src="img/screen__T1_volreg_visible__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/screen__T1_volreg_visible__dvr.mp4" data-cap="screen__T1_volreg_visible · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/screen__T1_volreg_visible__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill final">筛选</span></td>
+<td><span class="pill final">筛选</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">30.78 dB<div class="sub">27.47 – 32.27</div></td></tr>
 <tr>
 <td class="name">T2_prune_dead</td>
 <td class="what">ESVR 式死锚点回收(<code>--prune-dead</code>)<div class="note">+0.15;删了 12,385 死锚点又长回 12.7k,有用率仍 20% —— 新生的同样死掉</div><div class="path">output/scaffold4d/screen_fixed/T2_prune_dead/</div></td>
 <td class="scale">40,000 步<br>13.3 MB</td><td class="counts"><b>40,000</b> 锚点 × 10<br>= 400,000 高斯<br><span class="sub">活跃/查询 40,443</span><br><span class="sub">有用/查询 t=0.5 19,851</span><br><span class="sub">有用/查询 90 帧均值 <b>18,310</b> (12,246–19,917)</span><br><span class="sub">有用总数 78,155 (20%)</span><br><span class="sub">90 帧从未选入 115,446 (29%),其中“有用” 511</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/screen__T2_prune_dead__curve_full.jpg" data-cap="screen__T2_prune_dead · 曲线"><img src="img/screen__T2_prune_dead__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/screen__T2_prune_dead__slice_full.jpg" data-cap="screen__T2_prune_dead · 切片"><img src="img/screen__T2_prune_dead__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/screen__T2_prune_dead__dvr.mp4" data-cap="screen__T2_prune_dead · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/screen__T2_prune_dead__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill final">筛选</span></td>
+<td><span class="pill final">筛选</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">30.97 dB<div class="sub">27.26 – 32.82</div></td></tr>
 <tr>
 <td class="name">T3_spread</td>
 <td class="what">新生 10 个孩子在格子内散开(<code>--offset-spread 0.5</code>)<div class="note">−0.75</div><div class="path">output/scaffold4d/screen_fixed/T3_spread/</div></td>
 <td class="scale">40,000 步<br>13.3 MB</td><td class="counts"><b>40,000</b> 锚点 × 10<br>= 400,000 高斯<br><span class="sub">活跃/查询 58,387</span><br><span class="sub">有用/查询 t=0.5 35,621</span><br><span class="sub">有用/查询 90 帧均值 <b>32,069</b> (21,550–35,960)</span><br><span class="sub">有用总数 130,188 (33%)</span><br><span class="sub">90 帧从未选入 64,398 (16%),其中“有用” 899</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/screen__T3_spread__curve_full.jpg" data-cap="screen__T3_spread · 曲线"><img src="img/screen__T3_spread__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/screen__T3_spread__slice_full.jpg" data-cap="screen__T3_spread · 切片"><img src="img/screen__T3_spread__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/screen__T3_spread__dvr.mp4" data-cap="screen__T3_spread · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/screen__T3_spread__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill final">筛选</span></td>
+<td><span class="pill final">筛选</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">30.07 dB<div class="sub">27.40 – 31.49</div></td></tr>
 <tr>
 <td class="name">T4_childscale4</td>
 <td class="what">新生子尺度 4 体素<div class="note">−1.20:大孩子叠在一点过冲更重</div><div class="path">output/scaffold4d/screen_fixed/T4_childscale4/</div></td>
 <td class="scale">40,000 步<br>13.3 MB</td><td class="counts"><b>40,000</b> 锚点 × 10<br>= 400,000 高斯<br><span class="sub">活跃/查询 104,181</span><br><span class="sub">有用/查询 t=0.5 48,134</span><br><span class="sub">有用/查询 90 帧均值 <b>44,063</b> (35,172–48,119)</span><br><span class="sub">有用总数 87,474 (22%)</span><br><span class="sub">90 帧从未选入 167,204 (42%),其中“有用” 474</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/screen__T4_childscale4__curve_full.jpg" data-cap="screen__T4_childscale4 · 曲线"><img src="img/screen__T4_childscale4__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/screen__T4_childscale4__slice_full.jpg" data-cap="screen__T4_childscale4 · 切片"><img src="img/screen__T4_childscale4__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/screen__T4_childscale4__dvr.mp4" data-cap="screen__T4_childscale4 · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/screen__T4_childscale4__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill final">筛选</span></td>
+<td><span class="pill final">筛选</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">29.63 dB<div class="sub">26.20 – 31.00</div></td></tr>
 <tr>
 <td class="name">T5_sigma1000</td>
 <td class="what">σ 钳位 100 → 1000<div class="note">−0.33</div><div class="path">output/scaffold4d/screen_fixed/T5_sigma1000/</div></td>
 <td class="scale">40,000 步<br>13.3 MB</td><td class="counts"><b>40,000</b> 锚点 × 10<br>= 400,000 高斯<br><span class="sub">活跃/查询 44,903</span><br><span class="sub">有用/查询 t=0.5 21,294</span><br><span class="sub">有用/查询 90 帧均值 <b>19,210</b> (12,664–21,337)</span><br><span class="sub">有用总数 63,372 (16%)</span><br><span class="sub">90 帧从未选入 123,536 (31%),其中“有用” 291</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/screen__T5_sigma1000__curve_full.jpg" data-cap="screen__T5_sigma1000 · 曲线"><img src="img/screen__T5_sigma1000__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/screen__T5_sigma1000__slice_full.jpg" data-cap="screen__T5_sigma1000 · 切片"><img src="img/screen__T5_sigma1000__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/screen__T5_sigma1000__dvr.mp4" data-cap="screen__T5_sigma1000 · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/screen__T5_sigma1000__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill final">筛选</span></td>
+<td><span class="pill final">筛选</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">30.49 dB<div class="sub">27.49 – 31.71</div></td></tr>
 <tr>
 <td class="name">T6_novol</td>
 <td class="what">λ_vol = 0(ESVR 本无体积正则)<div class="note">−0.57:正则对抑制大孩子有用</div><div class="path">output/scaffold4d/screen_fixed/T6_novol/</div></td>
 <td class="scale">40,000 步<br>13.3 MB</td><td class="counts"><b>40,000</b> 锚点 × 10<br>= 400,000 高斯<br><span class="sub">活跃/查询 51,153</span><br><span class="sub">有用/查询 t=0.5 19,262</span><br><span class="sub">有用/查询 90 帧均值 <b>17,423</b> (11,371–19,271)</span><br><span class="sub">有用总数 56,716 (14%)</span><br><span class="sub">90 帧从未选入 138,908 (35%),其中“有用” 148</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/screen__T6_novol__curve_full.jpg" data-cap="screen__T6_novol · 曲线"><img src="img/screen__T6_novol__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/screen__T6_novol__slice_full.jpg" data-cap="screen__T6_novol · 切片"><img src="img/screen__T6_novol__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/screen__T6_novol__dvr.mp4" data-cap="screen__T6_novol · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/screen__T6_novol__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill final">筛选</span></td>
+<td><span class="pill final">筛选</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">30.25 dB<div class="sub">26.41 – 31.77</div></td></tr>
 <tr>
 <td class="name">T7_combo</td>
 <td class="what">T1+T2+T3+T4<div class="note">−0.52</div><div class="path">output/scaffold4d/screen_fixed/T7_combo/</div></td>
 <td class="scale">40,000 步<br>13.3 MB</td><td class="counts"><b>40,000</b> 锚点 × 10<br>= 400,000 高斯<br><span class="sub">活跃/查询 101,783</span><br><span class="sub">有用/查询 t=0.5 64,281</span><br><span class="sub">有用/查询 90 帧均值 <b>59,104</b> (44,476–64,866)</span><br><span class="sub">有用总数 182,517 (46%)</span><br><span class="sub">90 帧从未选入 72,922 (18%),其中“有用” 967</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/screen__T7_combo__curve_full.jpg" data-cap="screen__T7_combo · 曲线"><img src="img/screen__T7_combo__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/screen__T7_combo__slice_full.jpg" data-cap="screen__T7_combo · 切片"><img src="img/screen__T7_combo__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/screen__T7_combo__dvr.mp4" data-cap="screen__T7_combo · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/screen__T7_combo__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill final">筛选</span></td>
+<td><span class="pill final">筛选</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">30.30 dB<div class="sub">27.35 – 31.81</div></td></tr>
 <tr>
 <td class="name">T8_K5</td>
 <td class="what">K = 5<div class="note">−0.35,大小 −24%</div><div class="path">output/scaffold4d/screen_fixed/T8_K5/</div></td>
 <td class="scale">40,000 步<br>10.1 MB</td><td class="counts"><b>40,000</b> 锚点 × 5<br>= 200,000 高斯<br><span class="sub">活跃/查询 43,893</span><br><span class="sub">有用/查询 t=0.5 30,653</span><br><span class="sub">有用/查询 90 帧均值 <b>27,581</b> (17,798–30,917)</span><br><span class="sub">有用总数 95,130 (48%)</span><br><span class="sub">90 帧从未选入 21,567 (11%),其中“有用” 347</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/screen__T8_K5__curve_full.jpg" data-cap="screen__T8_K5 · 曲线"><img src="img/screen__T8_K5__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/screen__T8_K5__slice_full.jpg" data-cap="screen__T8_K5 · 切片"><img src="img/screen__T8_K5__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/screen__T8_K5__dvr.mp4" data-cap="screen__T8_K5 · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/screen__T8_K5__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill final">筛选</span></td>
+<td><span class="pill final">筛选</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">30.48 dB<div class="sub">26.90 – 31.91</div></td></tr>
 <tr class="best">
 <td class="name">T9_K5_cap80k</td>
 <td class="what">K = 5,锚点上限 80k<div class="note">+0.76,大小 ×1.5</div><div class="path">output/scaffold4d/screen_fixed/T9_K5_cap80k/</div></td>
 <td class="scale">40,000 步<br>20.2 MB</td><td class="counts"><b>80,000</b> 锚点 × 5<br>= 400,000 高斯<br><span class="sub">活跃/查询 53,119</span><br><span class="sub">有用/查询 t=0.5 23,559</span><br><span class="sub">有用/查询 90 帧均值 <b>21,695</b> (14,240–23,792)</span><br><span class="sub">有用总数 90,079 (23%)</span><br><span class="sub">90 帧从未选入 80,630 (20%),其中“有用” 383</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/screen__T9_K5_cap80k__curve_full.jpg" data-cap="screen__T9_K5_cap80k · 曲线"><img src="img/screen__T9_K5_cap80k__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/screen__T9_K5_cap80k__slice_full.jpg" data-cap="screen__T9_K5_cap80k · 切片"><img src="img/screen__T9_K5_cap80k__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/screen__T9_K5_cap80k__dvr.mp4" data-cap="screen__T9_K5_cap80k · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/screen__T9_K5_cap80k__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill final">筛选</span></td>
+<td><span class="pill final">筛选</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">31.58 dB<div class="sub">27.79 – 33.11</div></td></tr>
 <tr>
 <td class="name">T10_K3</td>
 <td class="what">K = 3<div class="note">−0.49,大小 −34%</div><div class="path">output/scaffold4d/screen_fixed/T10_K3/</div></td>
 <td class="scale">40,000 步<br>8.8 MB</td><td class="counts"><b>40,000</b> 锚点 × 3<br>= 120,000 高斯<br><span class="sub">活跃/查询 35,352</span><br><span class="sub">有用/查询 t=0.5 19,896</span><br><span class="sub">有用/查询 90 帧均值 <b>17,378</b> (10,624–19,914)</span><br><span class="sub">有用总数 55,562 (46%)</span><br><span class="sub">90 帧从未选入 3,454 (3%),其中“有用” 43</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/screen__T10_K3__curve_full.jpg" data-cap="screen__T10_K3 · 曲线"><img src="img/screen__T10_K3__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/screen__T10_K3__slice_full.jpg" data-cap="screen__T10_K3 · 切片"><img src="img/screen__T10_K3__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/screen__T10_K3__dvr.mp4" data-cap="screen__T10_K3 · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/screen__T10_K3__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill final">筛选</span></td>
+<td><span class="pill final">筛选</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">30.33 dB<div class="sub">27.01 – 31.58</div></td></tr>
 </tbody></table></div>
 <div class="callout"><b>筛选结论:</b>七种"回收/保护死容量"的修法没有一种有效,三种有害。死容量是存储上的浪费,不是 PSNR 的瓶颈——40k 锚点上模型已把可用容量用尽,多余孩子被压死是优化器在"关闭"它们(上游用 tanh 免费掩掉,这里只能压小/压暗)。K=3/5/10 每字节效率相近,K=5 略优。</div>
@@ -459,21 +469,21 @@ footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--line);font-si
 <td class="what">锚点上限 150k(长满)<div class="note">对比 F_cap100k(33 MB,32.95):33→50 MB 只 +0.04 dB,预算在此配方下饱和;监控曲线 60k 步后走平且相邻检查点摆动 ±0.7 dB</div><div class="path">output/scaffold4d/scale/G1_K10_150k_120k/</div></td>
 <td class="scale"><b>2114 s</b> · 120,000 步<br>49.83 MB</td><td class="counts"><b>150,000</b> 锚点 × 10<br>= 1,500,000 高斯<br><span class="sub">活跃/查询 61,661</span><br><span class="sub">有用/查询 t=0.5 18,064</span><br><span class="sub">有用/查询 90 帧均值 <b>16,717</b> (11,500–19,044)</span><br><span class="sub">有用总数 102,788 (7%)</span><br><span class="sub">90 帧从未选入 702,634 (47%),其中“有用” 1,187</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/scale__G1_K10_150k_120k__curve_full.jpg" data-cap="scale__G1_K10_150k_120k · 曲线"><img src="img/scale__G1_K10_150k_120k__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/scale__G1_K10_150k_120k__slice_full.jpg" data-cap="scale__G1_K10_150k_120k · 切片"><img src="img/scale__G1_K10_150k_120k__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/scale__G1_K10_150k_120k__dvr.mp4" data-cap="scale__G1_K10_150k_120k · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/scale__G1_K10_150k_120k__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill final">当前结论</span></td>
+<td><span class="pill final">当前结论</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">32.99 dB<div class="sub">29.91 – 34.64</div></td></tr>
 <tr>
 <td class="name">G2_K5_240k_120k</td>
 <td class="what">K=5,锚点上限 240k(实际长到 195k,后期梯度低于阈值)<div class="note">与 G1 大小匹配(49 MB):K=5 与 K=10 无差别</div><div class="path">output/scaffold4d/scale/G2_K5_240k_120k/</div></td>
 <td class="scale"><b>2095 s</b> · 120,000 步<br>49.22 MB</td><td class="counts"><b>195,231</b> 锚点 × 5<br>= 976,155 高斯<br><span class="sub">活跃/查询 66,555</span><br><span class="sub">有用/查询 t=0.5 22,479</span><br><span class="sub">有用/查询 90 帧均值 <b>21,348</b> (15,541–23,375)</span><br><span class="sub">有用总数 131,629 (13%)</span><br><span class="sub">90 帧从未选入 259,125 (27%),其中“有用” 1,397</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/scale__G2_K5_240k_120k__curve_full.jpg" data-cap="scale__G2_K5_240k_120k · 曲线"><img src="img/scale__G2_K5_240k_120k__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/scale__G2_K5_240k_120k__slice_full.jpg" data-cap="scale__G2_K5_240k_120k · 切片"><img src="img/scale__G2_K5_240k_120k__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/scale__G2_K5_240k_120k__dvr.mp4" data-cap="scale__G2_K5_240k_120k · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/scale__G2_K5_240k_120k__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill final">当前结论</span></td>
+<td><span class="pill final">当前结论</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">32.68 dB<div class="sub">31.20 – 34.30</div></td></tr>
 <tr class="best">
 <td class="name"><b>G5_K10_150k_120k_decay</b></td>
 <td class="what">G1 + <code>--final-lr-scale 0.01</code>:feature / scale / shape-MLP / flow-MLP 四组上游全程恒定的学习率也按对数线性衰减到 1/100(offset、opacity-MLP 上游本就衰减)<div class="note">单变量 +5.05 dB;曲线单调(20k 29.7 → 60k 35.8 → 100k 37.2 → 120k 37.2);重载逐字节一致;每次查询约 2.2 万有用孩子,接近逐帧 ESVR 的 2.4 万</div><div class="path">output/scaffold4d/scale/G5_K10_150k_120k_decay/</div></td>
 <td class="scale"><b>2584 s</b> · 120,000 步<br>47.27 MB<br><span class="sub">压缩后 <b>7.2 MB</b> · 38.03 dB (-0.010)</span></td><td class="counts"><b>142,303</b> 锚点 × 10<br>= 1,423,030 高斯<br><span class="sub">活跃/查询 65,502</span><br><span class="sub">有用/查询 t=0.5 22,358</span><br><span class="sub">有用/查询 90 帧均值 <b>21,100</b> (14,838–23,307)</span><br><span class="sub">有用总数 116,203 (8%)</span><br><span class="sub">90 帧从未选入 525,299 (37%),其中“有用” 695</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/scale__G5_K10_150k_120k_decay__curve_full.jpg" data-cap="scale__G5_K10_150k_120k_decay · 曲线"><img src="img/scale__G5_K10_150k_120k_decay__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/scale__G5_K10_150k_120k_decay__slice_full.jpg" data-cap="scale__G5_K10_150k_120k_decay · 切片"><img src="img/scale__G5_K10_150k_120k_decay__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/scale__G5_K10_150k_120k_decay__dvr.mp4" data-cap="scale__G5_K10_150k_120k_decay · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/scale__G5_K10_150k_120k_decay__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill final">当前结论</span></td>
+<td><span class="pill final">当前结论</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">38.04 dB<div class="sub">34.99 – 38.93</div></td></tr>
 </tbody></table></div>
 <div class="callout"><b>学习率衰减是目前最大的单项杠杆。</b>上游 4D-Scaffold-GS 在 alpha 合成 + 多相机整帧监督下用恒定学习率;ESVR 的加法渲染 + 单个 64³ 块监督噪声更大,后期恒定学习率让模型在最优点附近来回跳(G1)。ESVR 自身的 position / opacity 学习率都是衰减的——这是"上游没有、参考 ESVR"的一项。G3/G4(480k 步、无衰减)在 G5 出结果后停止,GPU 让给下面的对照。</div>
@@ -484,42 +494,42 @@ footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--line);font-si
 <td class="what">锚点上限 40k(与 13 MB 的 F_default 大小匹配)<div class="note">对比无衰减的 F_default 31.84 ± 0.29:+3.6 dB,小模型同样受益</div><div class="path">output/scaffold4d/decay/H1_40k_decay0.01/</div></td>
 <td class="scale"><b>2396 s</b> · 120,000 步<br>13.31 MB<br><span class="sub">压缩后 <b>3.1 MB</b> · 35.46 dB (-0.007)</span></td><td class="counts"><b>40,000</b> 锚点 × 10<br>= 400,000 高斯<br><span class="sub">活跃/查询 45,179</span><br><span class="sub">有用/查询 t=0.5 21,544</span><br><span class="sub">有用/查询 90 帧均值 <b>19,518</b> (12,149–21,644)</span><br><span class="sub">有用总数 82,834 (21%)</span><br><span class="sub">90 帧从未选入 36,399 (9%),其中“有用” 532</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/scaffold4d__decay__H1_40k_decay0.01__curve_full.jpg" data-cap="scaffold4d__decay__H1_40k_decay0.01 · 曲线"><img src="img/scaffold4d__decay__H1_40k_decay0.01__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/scaffold4d__decay__H1_40k_decay0.01__slice_full.jpg" data-cap="scaffold4d__decay__H1_40k_decay0.01 · 切片"><img src="img/scaffold4d__decay__H1_40k_decay0.01__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/scaffold4d__decay__H1_40k_decay0.01__dvr.mp4" data-cap="scaffold4d__decay__H1_40k_decay0.01 · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/scaffold4d__decay__H1_40k_decay0.01__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill final">当前结论</span></td>
+<td><span class="pill final">当前结论</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">35.46 dB<div class="sub">32.62 – 36.17</div></td></tr>
 <tr>
 <td class="name">H2_150k_decay0.1</td>
 <td class="what">衰减到 1/10<div class="note">+0.37,在种子噪声(0.42)内</div><div class="path">output/scaffold4d/decay/H2_150k_decay0.1/</div></td>
 <td class="scale"><b>2792 s</b> · 120,000 步<br>49.83 MB<br><span class="sub">压缩后 <b>7.7 MB</b> · 38.40 dB (-0.008)</span></td><td class="counts"><b>150,000</b> 锚点 × 10<br>= 1,500,000 高斯<br><span class="sub">活跃/查询 63,857</span><br><span class="sub">有用/查询 t=0.5 24,888</span><br><span class="sub">有用/查询 90 帧均值 <b>23,596</b> (16,373–25,987)</span><br><span class="sub">有用总数 141,529 (9%)</span><br><span class="sub">90 帧从未选入 670,809 (45%),其中“有用” 773</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/scaffold4d__decay__H2_150k_decay0.1__curve_full.jpg" data-cap="scaffold4d__decay__H2_150k_decay0.1 · 曲线"><img src="img/scaffold4d__decay__H2_150k_decay0.1__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/scaffold4d__decay__H2_150k_decay0.1__slice_full.jpg" data-cap="scaffold4d__decay__H2_150k_decay0.1 · 切片"><img src="img/scaffold4d__decay__H2_150k_decay0.1__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/scaffold4d__decay__H2_150k_decay0.1__dvr.mp4" data-cap="scaffold4d__decay__H2_150k_decay0.1 · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/scaffold4d__decay__H2_150k_decay0.1__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill final">当前结论</span></td>
+<td><span class="pill final">当前结论</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">38.40 dB<div class="sub">35.86 – 39.06</div></td></tr>
 <tr>
 <td class="name">H3_150k_decay0.001</td>
 <td class="what">衰减到 1/1000<div class="note">−0.19,噪声内;1/10–1/1000 都可</div><div class="path">output/scaffold4d/decay/H3_150k_decay0.001/</div></td>
 <td class="scale"><b>2424 s</b> · 120,000 步<br>49.83 MB<br><span class="sub">压缩后 <b>9.6 MB</b> · 37.83 dB (-0.016)</span></td><td class="counts"><b>150,000</b> 锚点 × 10<br>= 1,500,000 高斯<br><span class="sub">活跃/查询 114,237</span><br><span class="sub">有用/查询 t=0.5 45,750</span><br><span class="sub">有用/查询 90 帧均值 <b>42,491</b> (29,214–47,622)</span><br><span class="sub">有用总数 243,882 (16%)</span><br><span class="sub">90 帧从未选入 303,157 (20%),其中“有用” 1,743</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/scaffold4d__decay__H3_150k_decay0.001__curve_full.jpg" data-cap="scaffold4d__decay__H3_150k_decay0.001 · 曲线"><img src="img/scaffold4d__decay__H3_150k_decay0.001__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/scaffold4d__decay__H3_150k_decay0.001__slice_full.jpg" data-cap="scaffold4d__decay__H3_150k_decay0.001 · 切片"><img src="img/scaffold4d__decay__H3_150k_decay0.001__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/scaffold4d__decay__H3_150k_decay0.001__dvr.mp4" data-cap="scaffold4d__decay__H3_150k_decay0.001 · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/scaffold4d__decay__H3_150k_decay0.001__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill final">当前结论</span></td>
+<td><span class="pill final">当前结论</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">37.85 dB<div class="sub">34.88 – 38.80</div></td></tr>
 <tr class="best">
 <td class="name">H4_150k_decay0.01_480k</td>
 <td class="what">480k 步(生长窗口与衰减同比拉长)<div class="note">+1.40,最高帧 40.30;重载逐字节一致。(原注“与逐帧 ESVR 39.38 持平”已作废:那个基线是未修复核;正确的静态参照是 41.7–44.7 dB,见 A 节)</div><div class="path">output/scaffold4d/decay/H4_150k_decay0.01_480k/</div></td>
 <td class="scale"><b>8032 s</b> · 480,000 步<br>49.83 MB<br><span class="sub">压缩后 <b>7.2 MB</b> · 39.42 dB (-0.015)</span></td><td class="counts"><b>150,000</b> 锚点 × 10<br>= 1,500,000 高斯<br><span class="sub">活跃/查询 61,584</span><br><span class="sub">有用/查询 t=0.5 17,719</span><br><span class="sub">有用/查询 90 帧均值 <b>16,671</b> (11,800–19,041)</span><br><span class="sub">有用总数 129,163 (9%)</span><br><span class="sub">90 帧从未选入 495,472 (33%),其中“有用” 3,333</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/scaffold4d__decay__H4_150k_decay0.01_480k__curve_full.jpg" data-cap="scaffold4d__decay__H4_150k_decay0.01_480k · 曲线"><img src="img/scaffold4d__decay__H4_150k_decay0.01_480k__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/scaffold4d__decay__H4_150k_decay0.01_480k__slice_full.jpg" data-cap="scaffold4d__decay__H4_150k_decay0.01_480k · 切片"><img src="img/scaffold4d__decay__H4_150k_decay0.01_480k__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/scaffold4d__decay__H4_150k_decay0.01_480k__dvr.mp4" data-cap="scaffold4d__decay__H4_150k_decay0.01_480k · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/scaffold4d__decay__H4_150k_decay0.01_480k__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill final">当前结论</span></td>
+<td><span class="pill final">当前结论</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">39.43 dB<div class="sub">37.05 – 40.30</div></td></tr>
 <tr>
 <td class="name">H5_300k_decay0.01</td>
 <td class="what">锚点上限 300k(~65 MB)<div class="note">+0.11:预算不是瓶颈</div><div class="path">output/scaffold4d/decay/H5_300k_decay0.01/</div></td>
 <td class="scale"><b>2847 s</b> · 120,000 步<br>64.77 MB<br><span class="sub">压缩后 <b>8.7 MB</b> · 38.13 dB (-0.017)</span></td><td class="counts"><b>195,005</b> 锚点 × 10<br>= 1,950,050 高斯<br><span class="sub">活跃/查询 110,253</span><br><span class="sub">有用/查询 t=0.5 30,994</span><br><span class="sub">有用/查询 90 帧均值 <b>29,132</b> (20,007–32,009)</span><br><span class="sub">有用总数 166,836 (9%)</span><br><span class="sub">90 帧从未选入 478,758 (25%),其中“有用” 1,339</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/scaffold4d__decay__H5_300k_decay0.01__curve_full.jpg" data-cap="scaffold4d__decay__H5_300k_decay0.01 · 曲线"><img src="img/scaffold4d__decay__H5_300k_decay0.01__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/scaffold4d__decay__H5_300k_decay0.01__slice_full.jpg" data-cap="scaffold4d__decay__H5_300k_decay0.01 · 切片"><img src="img/scaffold4d__decay__H5_300k_decay0.01__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/scaffold4d__decay__H5_300k_decay0.01__dvr.mp4" data-cap="scaffold4d__decay__H5_300k_decay0.01 · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/scaffold4d__decay__H5_300k_decay0.01__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill final">当前结论</span></td>
+<td><span class="pill final">当前结论</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">38.15 dB<div class="sub">35.09 – 39.17</div></td></tr>
 <tr>
 <td class="name">H6_150k_decay0.01_s1</td>
 <td class="what">种子 1<div class="note">与 G5 差 0.42 dB = 修复核 + 衰减下的种子噪声尺子</div><div class="path">output/scaffold4d/decay/H6_150k_decay0.01_s1/</div></td>
 <td class="scale"><b>1806 s</b> · 120,000 步<br>49.83 MB<br><span class="sub">压缩后 <b>10.2 MB</b> · 38.44 dB (-0.015)</span></td><td class="counts"><b>150,000</b> 锚点 × 10<br>= 1,500,000 高斯<br><span class="sub">活跃/查询 94,186</span><br><span class="sub">有用/查询 t=0.5 46,533</span><br><span class="sub">有用/查询 90 帧均值 <b>43,512</b> (33,776–47,330)</span><br><span class="sub">有用总数 305,401 (20%)</span><br><span class="sub">90 帧从未选入 473,902 (32%),其中“有用” 5,710</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/scaffold4d__decay__H6_150k_decay0.01_s1__curve_full.jpg" data-cap="scaffold4d__decay__H6_150k_decay0.01_s1 · 曲线"><img src="img/scaffold4d__decay__H6_150k_decay0.01_s1__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/scaffold4d__decay__H6_150k_decay0.01_s1__slice_full.jpg" data-cap="scaffold4d__decay__H6_150k_decay0.01_s1 · 切片"><img src="img/scaffold4d__decay__H6_150k_decay0.01_s1__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/scaffold4d__decay__H6_150k_decay0.01_s1__dvr.mp4" data-cap="scaffold4d__decay__H6_150k_decay0.01_s1 · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/scaffold4d__decay__H6_150k_decay0.01_s1__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill final">当前结论</span></td>
+<td><span class="pill final">当前结论</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">38.45 dB<div class="sub">35.70 – 39.62</div></td></tr>
 </tbody></table></div>
 <div class="callout"><b>结论:</b>步数是当前瓶颈(×4 → +1.4 dB),锚点预算不是(150k → 300k 无收益),衰减系数 1/10–1/1000 均可。<b>训练后压缩</b>(<code>experiments/compact_scaffold4d.py</code>,只读 checkpoint、产物写到 <code>compact/</code>):删掉核永远画不出的孩子(强度 &lt; 1/255,精确无损)、贴在尺度下限的孩子(−0.01 dB)和空锚点,只存保留孩子的 offset + 每孩子 1 位掩码,fp16——G5 47.3 → 7.2 MB、H4 49.8 → <b>7.2 MB / 39.42 dB</b>。训练时约 90% 的字节属于被优化器关掉的孩子。"规模"列里的"压缩后"即此。</div>
@@ -530,21 +540,21 @@ footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--line);font-si
 <td class="what">H4 + 锚点上限 300k<div class="note">+0.30(噪声内,但 120k 步时 300k 无收益,步数够长后预算开始起作用);重载逐字节一致</div><div class="path">output/scaffold4d/long/I3_300k_decay0.01_480k/</div></td>
 <td class="scale"><b>11852 s</b> · 480,000 步<br>87.62 MB<br><span class="sub">压缩后 <b>9.3 MB</b> · 39.71 dB (-0.021)</span></td><td class="counts"><b>263,844</b> 锚点 × 10<br>= 2,638,440 高斯<br><span class="sub">活跃/查询 98,081</span><br><span class="sub">有用/查询 t=0.5 19,257</span><br><span class="sub">有用/查询 90 帧均值 <b>18,388</b> (13,699–20,431)</span><br><span class="sub">有用总数 127,201 (5%)</span><br><span class="sub">90 帧从未选入 892,888 (34%),其中“有用” 2,062</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/scaffold4d__long__I3_300k_decay0.01_480k__curve_full.jpg" data-cap="scaffold4d__long__I3_300k_decay0.01_480k · 曲线"><img src="img/scaffold4d__long__I3_300k_decay0.01_480k__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/scaffold4d__long__I3_300k_decay0.01_480k__slice_full.jpg" data-cap="scaffold4d__long__I3_300k_decay0.01_480k · 切片"><img src="img/scaffold4d__long__I3_300k_decay0.01_480k__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/scaffold4d__long__I3_300k_decay0.01_480k__dvr.mp4" data-cap="scaffold4d__long__I3_300k_decay0.01_480k · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/scaffold4d__long__I3_300k_decay0.01_480k__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill final">当前结论</span></td>
+<td><span class="pill final">当前结论</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">39.73 dB<div class="sub">37.24 – 40.69</div></td></tr>
 <tr>
 <td class="name">I2_150k_decay0.01_960k</td>
 <td class="what">H4 + 960k 步<div class="note">−0.10:步数在 480k 附近饱和</div><div class="path">output/scaffold4d/long/I2_150k_decay0.01_960k/</div></td>
 <td class="scale"><b>15607 s</b> · 960,000 步<br>49.83 MB<br><span class="sub">压缩后 <b>6.1 MB</b> · 39.30 dB (-0.023)</span></td><td class="counts"><b>150,000</b> 锚点 × 10<br>= 1,500,000 高斯<br><span class="sub">活跃/查询 58,009</span><br><span class="sub">有用/查询 t=0.5 12,401</span><br><span class="sub">有用/查询 90 帧均值 <b>11,824</b> (8,144–13,281)</span><br><span class="sub">有用总数 79,329 (5%)</span><br><span class="sub">90 帧从未选入 251,151 (17%),其中“有用” 1,787</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/scaffold4d__long__I2_150k_decay0.01_960k__curve_full.jpg" data-cap="scaffold4d__long__I2_150k_decay0.01_960k · 曲线"><img src="img/scaffold4d__long__I2_150k_decay0.01_960k__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/scaffold4d__long__I2_150k_decay0.01_960k__slice_full.jpg" data-cap="scaffold4d__long__I2_150k_decay0.01_960k · 切片"><img src="img/scaffold4d__long__I2_150k_decay0.01_960k__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/scaffold4d__long__I2_150k_decay0.01_960k__dvr.mp4" data-cap="scaffold4d__long__I2_150k_decay0.01_960k · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/scaffold4d__long__I2_150k_decay0.01_960k__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill final">当前结论</span></td>
+<td><span class="pill final">当前结论</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">39.33 dB<div class="sub">36.80 – 40.37</div></td></tr>
 <tr>
 <td class="name">J1_40k_decay0.01_480k</td>
 <td class="what">H1 + 480k 步(40k 锚点不变,只加步数)<div class="note">+1.48 vs H1:与 150k 锚点上 H4 vs G5 的 +1.40 一致——步数 ×4 的收益不依赖预算;压缩后 2.6 MB</div><div class="path">output/scaffold4d/long/J1_40k_decay0.01_480k/</div></td>
 <td class="scale"><b>11119 s</b> · 480,000 步<br>13.31 MB<br><span class="sub">压缩后 <b>2.6 MB</b> · 36.93 dB (-0.010)</span></td><td class="counts"><b>40,000</b> 锚点 × 10<br>= 400,000 高斯<br><span class="sub">活跃/查询 28,760</span><br><span class="sub">有用/查询 t=0.5 13,437</span><br><span class="sub">有用/查询 90 帧均值 <b>12,153</b> (7,382–13,745)</span><br><span class="sub">有用总数 66,383 (17%)</span><br><span class="sub">90 帧从未选入 83,807 (21%),其中“有用” 655</span></td>
 <td class="vizcell"><div class="vizrow"><button class="viz" type="button" data-full="img/scaffold4d__long__J1_40k_decay0.01_480k__curve_full.jpg" data-cap="scaffold4d__long__J1_40k_decay0.01_480k · 曲线"><img src="img/scaffold4d__long__J1_40k_decay0.01_480k__curve.jpg" alt="曲线"><span>曲线</span></button><button class="viz" type="button" data-full="img/scaffold4d__long__J1_40k_decay0.01_480k__slice_full.jpg" data-cap="scaffold4d__long__J1_40k_decay0.01_480k · 切片"><img src="img/scaffold4d__long__J1_40k_decay0.01_480k__slice.jpg" alt="切片"><span>切片</span></button><button class="viz" type="button" data-video="img/scaffold4d__long__J1_40k_decay0.01_480k__dvr.mp4" data-cap="scaffold4d__long__J1_40k_decay0.01_480k · 90 帧体渲染:GT | 预测 | 体素误差 | 渲染图误差"><img src="img/scaffold4d__long__J1_40k_decay0.01_480k__slice.jpg" alt="动图"><span>▶ 动图</span></button></div></td>
-<td><span class="pill final">当前结论</span></td>
+<td><span class="pill final">当前结论</span><div class="ktag k-ok">修复核 · 自检</div></td>
 <td class="num">36.94 dB<div class="sub">34.13 – 37.64</div></td></tr>
 <tr>
 <td class="name">I1_150k_decay0.1_480k</td>
@@ -556,6 +566,26 @@ footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--line);font-si
 </tbody></table></div>
 <div class="callout"><b>两个维度近似可加:</b>预算 40k → 150k 约 +2.5 dB,步数 ×4 约 +1.5 dB,再往上都饱和(150k → 300k +0.3,480k → 960k −0.1)。I1(衰减 1/10)因四个运行并发显存吃紧而停止(H2 已表明 1/10 与 1/100 在噪声内)。最佳 I3 = 39.73 dB,距 40 dB 均值 0.27,已在种子噪声(0.42)之内;最高帧 40.69。</div>
 </section>
+<section class="method"><div class="mh"><span class="letter">E</span><h2>实现与上游的对应与偏离(审计 2026-09-22)</h2></div>
+<div class="lineage">基元、核、监督来自 ESVR;锚点/特征/子椭球结构、线性运动、广义高斯时间门、7 组优化器、dynamic-aware 生长来自 4D-Scaffold-GS 官方代码。不是逐行等价移植;每一处偏离及其实测影响如下(详见 <code>docs/ESVR_SCAFFOLD4D.md</code>)</div>
+<div class="tablewrap"><table class="dev"><thead><tr><th>偏离上游之处</th><th>原因</th><th>实测</th></tr></thead><tbody>
+<tr><td>opacity 头用 sigmoid,而非 tanh + “&gt;0 掩码”</td><td>tanh + 零特征初始化在 ~50 步内让全部孩子转负、永久死亡</td><td>没有它无法训练</td></tr>
+<tr><td>上游 <code>min_opacity</code> 锚点剪枝几乎不触发</td><td>K 个 sigmoid 强度之和很少低于每次 0.005;上游 tanh 给出精确的 0</td><td>每次运行只删 1–70 个;<code>--prune-dead</code>(ESVR 的 prune_zeros / 暗剪枝)能回收但不改变 PSNR(D.4)</td></tr>
+<tr><td>生长统计用 3D 中心梯度代替 2D 屏幕梯度</td><td>没有相机;这是 ESVR 自己 <code>add_densification_stats</code> 的量</td><td>阈值按 3D 梯度 p90 校准(修复核 1.2e-3)</td></tr>
+<tr><td>“观测足够”判据按块占体积比例缩放</td><td>孩子只在其 64³ 块被采到时才被观测</td><td>—</td></tr>
+<tr><td>锚点数上限 + 按投票强度排序准入</td><td>上游无上限</td><td>40k / 100k / 150k / 300k 均已测</td></tr>
+<tr><td>所有格子层级每轮都执行(<code>--grow-upstream-level-skip</code> 恢复上游规则)</td><td>上游只在粗层级本轮长出锚点时才执行细层级;09-22 审计才发现</td><td>未测</td></tr>
+<tr><td>锚点时间均匀随机初始化(上游全在 t₀)</td><td>体数据没有 SfM 帧</td><td><code>--init data</code>(按 GT 采样)vs 随机:0.0 dB</td></tr>
+<tr><td>子尺度 0.5 体素下限;σ ∈ [1e-2, 1e2];offset ∈ [−10, 10]</td><td>float32 / CUDA 失效模式(NaN、亚体素孩子零梯度)</td><td>下限:去掉 −3.3 dB</td></tr>
+<tr><td>时间截断 1e-3</td><td>效率;低于核的 1/255</td><td>—</td></tr>
+<tr><td>体积正则作用于全部时间激活的孩子(上游作用于被渲染的)</td><td>mini-batch 数据项 + 全局正则</td><td>只作用可见孩子 0.0 dB;去掉 −0.6 dB</td></tr>
+<tr><td><code>--final-lr-scale 0.01</code>(ESVR 配方,<b>非默认</b>)</td><td>上游恒定的 4 组学习率在块监督下后期震荡 ±0.7 dB;ESVR 自身学习率也衰减</td><td>150k 锚点 +5 dB;默认保持 1.0 使 argparse 默认 = 论文值</td></tr>
+<tr><td>每帧优化预算约为静态 ESVR 的 1/12</td><td>90 帧共享一次训练</td><td>静态天花板研究(A 节)</td></tr>
+</tbody></table></div>
+<div class="callout">逐段核对结论(代码 vs <code>generate_neural_gaussians</code> / <code>training_statis</code> / <code>anchor_growing</code> / <code>adjust_anchor</code> / <code>train.py</code>,以及 ESVR 的 <code>train_chunk.py</code> / <code>gaussian_model.py</code> / <code>forward.cu</code>):4D home 位置、线性运动、时间门(β=4)、时不变尺度旋转、7 组学习率与 <code>expon_lr</code>、增密统计权重、三层级格子生长、特征 max-pool、Adam eps、损失三项、SSIM(= 各 x 切片 2D SSIM 均值,与 ESVR 相同)、块坐标约定、评估口径(预测本在 [0,1] 内,裁剪 Δ=0)均一致;CUDA 位置梯度经有限差分验证(比值 1.00);G5/H4/I3 重载逐字节一致;压缩文件可被 <code>inference_scaffold4d.py</code> 读取并复现(H4 第 46 帧 39.34 vs 39.34 dB)。<br><br><b>独立审阅(2026-09-22,另一个不带本会话先验的代理逐行对照上游代码):</b>未发现影响任何已报数字的错误;它用单体素定位验证了块坐标约定与分块评估逐位一致,核对了扁平索引记账、优化器状态切片、生长/剪枝与上游的逐项对应、<code>expon_lr</code>、压缩位掩码往返、数据轴序与时间归一化。提出的 9 项健壮性/文档问题(缺失参数被 <code>strict=False</code> 掩盖、<code>--grow-depth 4</code> 格子尺寸为 0、<code>--init data</code> 的最近邻只用 xyz 且 N²、时间门测试靠浮点下溢通过、文档数字漂移等)已全部修复并提交。<b>本页的每一行结果数字都经过重新计算,来源仅为各运行的完整 90 帧 <code>evaluation/metrics.json</code>。</b></div>
+<div class="callout"><b>关于“无用高斯”与模型大小(2026-09-22):</b>这是表征层面的结构性现象,不是生长/剪枝代码的错误。每个锚点固定生成 K=10 个孩子,不需要的孩子只能被优化器“关掉”——上游用 tanh 掩码免费关闭(但其 offset 同样占存储,上游论文报的 storage 也包含全部 K 个 offset);在 ESVR 的加法渲染下只能压暗/压小,结果相同:存储里 60–90% 是死孩子。训练时删掉它们的两种途径都已测过:死锚点回收(T2)让新生锚点以同样速度死去,有用率不变;上游 <code>min_opacity</code> 在 sigmoid 下失效。<b>有效的做法是训练后压缩</b>(精确删暗孩子 + 位掩码 + fp16,6–7×,PSNR 不变),以及用更小的锚点上限换更长训练(J1:40k 锚点 / 480k 步 = 36.9 dB,压缩后 2.6 MB)。“压缩前就小”的路线正在 K4(60k 上限 + 回收,480k 步)中测试。</div>
+</section>
+
 <footer>评测协议:全部实验用全 90 帧训练(无留出),PSNR 为归一化 [0,1] 值域下的 3D 体素 PSNR 逐帧均值;标注"当前结论"的运行已做 checkpoint 重载逐字节校验。规模列:训练时长取自各运行的 <code>train.jsonl</code>(RTX 5090,多数运行 2–3 个并发共享 GPU);模型大小 = 推理所需权重张量的 float32 字节数(Scaffold4D:每锚点 83 float ≈ 332 B,三个 MLP 共约 28 KB),不含 Adam 状态、未做量化/熵编码。可视化列点击在页内打开各运行自己生成的 <code>quality_curves.png</code>(逐帧 PSNR/MAE 曲线)、<code>slice_comparison.png</code>(六个时刻的中央 Z 切片 GT/预测/误差)和 <code>training_frames_dvr.gif</code>(90 帧体渲染四联:GT | 预测 | 体素级绝对误差 | 渲染图像级绝对误差,误差面板 inferno 配色、上限 0.1)。动图为随页发布方便转成了 MP4(10 fps,H.264),原始 GIF 在各运行目录;只有各方法的关键运行带动图,其余运行的 GIF 同样在目录里。完整记录见各目录 <code>RESULTS.md</code>、<code>docs/ESVR_SCAFFOLD4D.md</code>、<code>output/scaffold4d/ablation/RESULTS.md</code>。</footer>
 </div>
 <script>
@@ -571,6 +601,7 @@ for(const g of [25,30,35,40,45,50]){s+=`<line x1="${L}" x2="${W-R}" y1="${Y(g)}"
 for(const g of [1,2,5,10,20,50,100,200,500]){s+=`<line y1="${T}" y2="${H-Bm}" x1="${X(g)}" x2="${X(g)}" stroke="var(--line)" stroke-dasharray="2 4"/><text x="${X(g)}" y="${H-Bm+16}" text-anchor="middle">${g}</text>`;}
 s+=`<text x="${(L+W-R)/2}" y="${H-6}" text-anchor="middle">模型大小 (MB, log)</text>`;
 s+=`<line x1="${L}" x2="${W-R}" y1="${Y(50)}" y2="${Y(50)}" stroke="var(--accent)" stroke-dasharray="6 4" opacity=".7"/><text x="${W-R-4}" y="${Y(50)-5}" text-anchor="end" style="fill:var(--accent)">目标 50 dB</text>`;
+s+=`<line x1="${L}" x2="${W-R}" y1="${Y(30.39)}" y2="${Y(30.39)}" stroke="var(--ink3)" stroke-dasharray="2 4"/><text x="${L+6}" y="${Y(30.39)-5}" style="fill:var(--ink3)">零模型:复制上一帧 30.39 dB</text>`;
 for(const p of P){const r=(p.s==="s4d_fix"||p.s==="s4d_compact")?7:(p.s==="static"?6:5);const op=p.f||p.s==="s4d_old"?.35:1;const st=(p.s==="s4d_fix"||p.s==="s4d_compact")?`stroke="var(--ink)" stroke-width="1.5"`:"";
 s+=`<circle class="pt" cx="${X(p.x)}" cy="${Y(p.y)}" r="${r}" fill="${C[p.s]}" opacity="${op}" ${st} data-l="${p.l} · ${p.x} MB · ${p.y.toFixed(2)} dB"/>`;}
 s+=`</svg><div class="tip" id="tip"></div>`;

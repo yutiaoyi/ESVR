@@ -44,14 +44,22 @@ def pill(kind, text=None):
     cls, default = PILL[kind]
     return f'<span class="pill {cls}">{html.escape(text or default)}</span>'
 
-def row(name, what, path, scale, key, status, psnr, minmax="", best=False, counts=None):
+KERNEL = {"fixed": ("k-ok", "修复核 · 自检"), "fixed-fp": ("k-ok", "修复核 · 指纹判定"), "fixed-script": ("k-ok", "修复核 · 脚本用 .venv/bin/python"),
+          "fixed-likely": ("k-warn", "很可能修复核 · 未记录"), "unfixed": ("k-bad", "未修复核"), "unfixed-by-design": ("k-neutral", "未修复核(有意,原始参照)"), "na": ("k-neutral", "—")}
+
+def kernel_tag(kind):
+    cls, text = KERNEL[kind]
+    return f'<div class="ktag {cls}">{text}</div>'
+
+def row(name, what, path, scale, key, status, psnr, minmax="", best=False, counts=None, kernel=None):
     extra = f'<td class="counts">{counts}</td>' if counts is not None else ""
+    ktag = kernel_tag(kernel) if kernel else ""
     return f'''<tr{' class="best"' if best else ''}>
 <td class="name">{name}</td>
 <td class="what">{what}<div class="path">{html.escape(path)}</div></td>
 <td class="scale">{scale}</td>{extra}
 <td class="vizcell">{viz(key)}</td>
-<td>{status}</td>
+<td>{status}{ktag}</td>
 <td class="num">{psnr}<div class="sub">{minmax}</div></td></tr>'''
 
 def s4d(name, run, what, status, best=False, note=""):
@@ -63,8 +71,10 @@ def s4d(name, run, what, status, best=False, note=""):
     c = compact.get(run)
     if c:
         scale += f'<br><span class="sub">压缩后 <b>{c["mb_after"]:.1f} MB</b> · {c["psnr_after"]:.2f} dB ({c["psnr_delta"]:+.3f})</span>'
+    kernel = ("unfixed" if run.startswith("ablation/") else "fixed-fp" if run == "vorts90_native_recipe"
+              else "fixed-likely" if run == "vorts90_matched_comparison" else "fixed")
     return row(name, what + (f'<div class="note">{note}</div>' if note else ""), "output/scaffold4d/" + run + "/", scale, key, status,
-               f'{r["psnr"]:.2f} dB', f'{r["pmin"]:.2f} – {r["pmax"]:.2f}', best, counts=count_cell(run))
+               f'{r["psnr"]:.2f} dB', f'{r["pmin"]:.2f} – {r["pmax"]:.2f}', best, counts=count_cell(run), kernel=kernel)
 
 # ---------- chart data ----------
 points = []
@@ -155,6 +165,8 @@ td.num{{text-align:right;font-size:15px;font-weight:600;white-space:nowrap}} td.
 .pill{{display:inline-block;font-size:11px;font-weight:600;padding:2px 9px;border-radius:100px;white-space:nowrap}}
 .pill.ref{{background:var(--info-soft);color:var(--info)}} .pill.final{{background:var(--good-soft);color:var(--good)}} .pill.old{{background:var(--warn-soft);color:var(--warn)}}
 .pill.bad{{background:var(--bad-soft);color:var(--bad)}} .pill.run{{background:var(--accent-soft);color:var(--accent)}}
+.ktag{{font-size:10.5px;margin-top:6px;white-space:nowrap;font-family:"JetBrains Mono",monospace}} .ktag.k-ok{{color:var(--good)}} .ktag.k-warn{{color:var(--warn)}} .ktag.k-bad{{color:var(--bad)}} .ktag.k-neutral{{color:var(--ink3)}}
+table.dev td,table.dev th{{font-size:12.5px;padding:8px 10px}} table.dev{{min-width:0}}
 .callout{{border-left:3px solid var(--accent);background:var(--accent-soft);border-radius:0 6px 6px 0;padding:12px 16px;font-size:13.5px;color:var(--ink2);margin-top:14px}} .callout b{{color:var(--ink)}}
 .callout.warn{{border-color:var(--bad);background:var(--bad-soft)}}
 dl.cfg{{display:grid;grid-template-columns:max-content 1fr;gap:4px 16px;font-size:13px;margin:0}} dl.cfg dt{{color:var(--ink3);font-family:"JetBrains Mono",monospace;font-size:12px}} dl.cfg dd{{margin:0;color:var(--ink2)}}
@@ -166,7 +178,8 @@ footer{{margin-top:48px;padding-top:18px;border-top:1px solid var(--line);font-s
 <div class="eyebrow">ESVR · time-varying reconstruction · status report</div>
 <h1>三种动态场景表征融入 ESVR 的实验记录</h1>
 <p class="sub">把 Deformable 3D Gaussians、4D Gaussian Splatting、4D-Scaffold-GS 三种时变表征接入 ESVR 的标量体素直接监督框架(基元只有中心/尺度/旋转/一个标量强度,无颜色、无视角、无透明度合成)。本页汇总 vorts 90 帧序列上全部真实数据实验,含配置、改动、规模与结果。</p>
-<div class="meta"><span><b>数据</b> vorts_timevarying,90 帧,128³,float32,值域归一化到 [0,1]</span><span><b>口径</b> 3D 体素 PSNR,逐帧计算后取均值;全 90 帧参与训练,无留出测试</span><span><b>更新</b> {today}</span></div>
+<div class="meta"><span><b>数据</b> vorts_timevarying,90 帧,128³,float32,值域归一化到 [0,1]</span><span><b>口径</b> 3D 体素 PSNR,逐帧计算后取均值</span><span><b>更新</b> {today}</span></div>
+<div class="callout warn" style="margin-top:14px"><b>所有数字都是训练集拟合质量。</b>全部实验用全 90 帧训练,从未做过留出时间点的验证;因此本页不能回答“模型是否学到了可插值的连续运动”,动图也只是把 90 个训练时刻串起来,帧间没有插值。这是自项目交接起就存在、至今未补的最大空白。另:2026-09-22 起每次运行会写 <code>voxelizer.json</code>(加载的 CUDA 扩展路径与 SHA256),并拒绝外来扩展;各行的“核”标签是对更早运行的事后判定,依据见 A 节与 D.2 说明。</div>
 </header>
 <div class="stats">
 <div class="stat"><div class="l">当前最佳动态模型</div><b class="hero">{best_fix["psnr"]:.2f} dB</b><div class="s">Scaffold4D · {best_fix["anchors"]//1000}k 锚点 · {best_fix["steps"]//1000}k 步 · 压缩后 {compact.get(best_key, {}).get("mb_after", best_fix["mb"]):.1f} MB</div></div>
@@ -187,16 +200,18 @@ parts.append('''<section class="method"><div class="mh"><span class="letter">A</
 <div class="lineage">不涉及时变表征,衡量"每帧独立重建能到多好";也是 40 dB 目标的参照系(逐帧 ESVR 每帧约 2.4 万个有效基元)</div>
 <div class="tablewrap"><table><thead><tr><th>结果</th><th>配置 / 路径</th><th>规模 / 耗时</th><th>高斯数</th><th>可视化</th><th>状态</th><th class="num">平均 PSNR</th></tr></thead><tbody>''')
 PF = lambda per, total, lo, hi, note: f'<b>{per:,}</b> / 帧(均值)<br>90 帧共 {total:,}<br><span class="sub">单帧 {lo:,} – {hi:,}</span><br><span class="sub">{note}</span>'
+parts.append(row("零模型基线:复制上一帧", "不训练任何模型,用第 t−1 帧预测第 t 帧(帧 1→2 的 PSNR);用第 1 帧预测第 90 帧为 13.77 dB。任何低于此的动态模型都不如“什么都不建模”", "(数据本身)",
+    "0 s<br>0 MB", "none", pill("ref", "零模型"), "30.39 dB", counts="—", kernel="na"))
 parts.append(row("单帧 vorts0001 基线", "原生 <code>train_chunk.py</code> 配方,22,400 迭代,增密+剪枝,未修复核", "output/experiments/vorts0001_baseline/",
-    "<b>36.8 s</b><br>0.92 MB", "experiments__vorts0001_baseline", pill("ref"), "41.77 dB", counts='<b>21,401</b> 个高斯<br><span class="sub">20,000 初始 → 增密 → 剪枝后</span>'))
+    "<b>36.8 s</b><br>0.92 MB", "experiments__vorts0001_baseline", pill("ref"), "41.77 dB", counts='<b>21,401</b> 个高斯<br><span class="sub">20,000 初始 → 增密 → 剪枝后</span>', kernel="unfixed-by-design"))
 parts.append(row("90 帧逐帧原生 ESVR", "与上行相同配方,90 帧各训一套,未修复核", "ESVR/output/esvr_original_per_frame/",
-    "<b>3627 s</b>(40.3 s/帧)<br>93.77 MB", "esvr_original_per_frame", pill("ref"), "41.22 dB", counts=PF(23673, 2130583, 21131, 26656, "全部有效(每帧一个静态模型,无时间门)")))
+    "<b>3627 s</b>(40.3 s/帧)<br>93.77 MB", "esvr_original_per_frame", pill("ref"), "41.22 dB", counts=PF(23673, 2130583, 21131, 26656, "全部有效(每帧一个静态模型,无时间门)"), kernel="unfixed-by-design"))
 parts.append(row("90 帧逐帧,“修复核”对照", "同上 + position 学习率 ÷4096;<b>实际经 activate 运行在未修复核上</b>(见 A 节说明),量到的是学习率 ÷4096 的代价", "output/experiments/vorts90_cuda_fixed_lr_only/",
-    "<b>3466 s</b><br>≈ 90 MB", "experiments__vorts90_cuda_fixed_lr_only", pill("bad"), "39.38 dB", "38.65 – 39.94", counts=PF(24084, 2167597, 22391, 26262, "未修复核 + 位置几乎冻结")))
+    "<b>3466 s</b><br>≈ 90 MB", "experiments__vorts90_cuda_fixed_lr_only", pill("bad"), "39.38 dB", "38.65 – 39.94", counts=PF(24084, 2167597, 22391, 26262, "未修复核 + 位置几乎冻结"), kernel="unfixed"))
 parts.append(row("单帧,“修复核”对照", "同首行 + position 学习率 ÷4096;<b>同样运行在未修复核上</b>", "output/experiments/vorts0001_cuda_fixed_lr_only/",
-    "<b>36.0 s</b>", "experiments__vorts0001_cuda_fixed_lr_only", pill("bad"), "39.94 dB", counts='<b>22,424</b> 个高斯<br><span class="sub">20,000 → 峰值 83,546 → 剪枝后</span>'))
+    "<b>36.0 s</b>", "experiments__vorts0001_cuda_fixed_lr_only", pill("bad"), "39.94 dB", counts='<b>22,424</b> 个高斯<br><span class="sub">20,000 → 峰值 83,546 → 剪枝后</span>', kernel="unfixed"))
 parts.append(row("单帧,学习率+阈值都补偿", "position 学习率 ÷4096 且 densify 阈值 ×4096,未修复核:阈值相对梯度大 4096 倍,增密被抑制", "output/experiments/vorts0001_cuda_fixed_matched_lr/",
-    "<b>36.7 s</b>", "experiments__vorts0001_cuda_fixed_matched_lr", pill("bad"), "38.81 dB", counts='<b>5,409</b> 个高斯<br><span class="sub">20,000 → 几乎只剪不增</span>'))
+    "<b>36.7 s</b>", "experiments__vorts0001_cuda_fixed_matched_lr", pill("bad"), "38.81 dB", counts='<b>5,409</b> 个高斯<br><span class="sub">20,000 → 几乎只剪不增</span>', kernel="unfixed"))
 STATIC = [("S1b_init20k_x1", "<b>修复核,正确配方</b>:原生学习率不变,densify 阈值 ×4096(2.5e-7 → 1.024e-3),其余同首行", "22,400 步 · 0.93 MB", 21247, 63332, 41.72, "final", "与未修复核的 41.77 一致:修复本身无代价"),
           ("S2b_init60k_x1", "同上,初始 60k 基元", "22,400 步 · 1.31 MB", 29817, 88809, 42.29, "ref", None),
           ("S3b_init20k_x3", "同 S1b,全部调度 ×3", "67,200 步 · 0.71 MB", 16243, 58938, 44.73, "ref", "更长训练比更多基元有效:比 S2b 高 2.4 dB,基元只有一半"),
@@ -205,22 +220,22 @@ STATIC = [("S1b_init20k_x1", "<b>修复核,正确配方</b>:原生学习率不�
 for name, what, scale, final, peak, psnr, kind, note in STATIC:
     parts.append(row(name, what + (f'<div class="note">{note}</div>' if note else ""), f"output/experiments/static_ceiling/{name}_chunk_0/", f"<b>{scale.split(' · ')[0]}</b><br>{scale.split(' · ')[1]}", "none",
                      pill(kind, "静态天花板" if kind == "final" else "参照"), f"{psnr:.2f} dB", best=(kind == "final"),
-                     counts=f'<b>{final:,}</b> 个高斯<br><span class="sub">峰值 {peak:,}</span>'))
-parts.append(row("90 帧逐帧简化 ESVR", "<code>train_dynamic.py --allow-single-frame</code>,固定 3 万图元,修复核", "output/esvr_per_frame_baseline/",
-    "<b>466 s</b><br>301 MB", "esvr_per_frame_baseline", pill("ref"), "38.86 dB", counts=PF(30000, 2700000, 30000, 30000, "固定,无增密")))
+                     counts=f'<b>{final:,}</b> 个高斯<br><span class="sub">峰值 {peak:,}</span>', kernel="fixed"))
+parts.append(row("90 帧逐帧简化 ESVR", "<code>train_dynamic.py --allow-single-frame</code>,固定 3 万图元", "output/esvr_per_frame_baseline/",
+    "<b>466 s</b><br>301 MB", "esvr_per_frame_baseline", pill("ref"), "38.86 dB", counts=PF(30000, 2700000, 30000, 30000, "固定,无增密"), kernel="fixed-likely"))
 parts.append('''</tbody></table></div>
 <div class="callout warn"><b>2026-09-22 更正——“修复核对照”(39.94 / 39.38)实际运行在未修复核上。</b>把 09-13 那次单帧配置在真正的修复核上原样重跑,第一次增密就失控(20,000 → 4.85M 基元,OOM),而 09-13 的日志里基元峰值只有 83,537——同一条命令在同一个核上不可能两种表现;它是经 <code>run_vorts0001.sh</code> 的 <code>source activate</code> 跑在 <code>ESVR/.venv</code> 的未修复扩展上的。机制:修复后位置梯度大 4096 倍,按未修复梯度调的 densify 阈值 2.5e-7 会选中全部基元;当时把 OOM 归因于学习率并 ÷4096,而 Adam 对梯度尺度不敏感,那一步只是把位置冻住。<b>正确配方</b>是学习率不动、阈值 ×4096:S1b = 41.72 dB,与未修复核的 41.77 一致——<b>修复本身没有代价</b>,之前“−1.84 dB”是位置冻结的代价。</div>
-<div class="callout"><b>高斯数(从各帧最终迭代的 PLY 直接计数):</b>原生逐帧 90 帧共 2,130,583 个(均值 23,673)。<b>静态天花板(S 系列):</b>同一基元与核,单帧加到 139k 基元、67k 步,可达 <b>49.67 dB</b>(6.1 MB/帧,90 帧约 550 MB;原始数据 755 MB)。训练长度和容量同样重要:20k 基元训 3 倍长(S3b)44.7 dB,超过 60k 基元训 1 倍长(S2b)42.3。这给出两个参照:与动态模型同等每时刻容量(~2 万有用高斯)的静态模型充分训练可到 44–45 dB;50 dB 需要每时刻约 14 万个有效基元。原生配方的 <code>position_lr</code> 是在梯度被压缩 4096 倍的前提下调出来的,修复后必须 ÷4096 补偿才能稳定。</div></section>''')
+<div class="callout"><b>高斯数(从各帧最终迭代的 PLY 直接计数):</b>原生逐帧 90 帧共 2,130,583 个(均值 23,673)。<b>静态天花板(S 系列):</b>同一基元与核,单帧加到 139k 基元、67k 步,可达 <b>49.67 dB</b>(6.1 MB/帧,90 帧约 550 MB;原始数据 755 MB)。训练长度和容量同样重要:20k 基元训 3 倍长(S3b)44.7 dB,超过 60k 基元训 1 倍长(S2b)42.3。这给出两个参照:与动态模型同等每时刻容量(~2 万有用高斯)的静态模型充分训练可到 44–45 dB;50 dB 需要每时刻约 14 万个有效基元。<br><br><b>每帧优化预算对比(动态模型为何落后静态同容量模型 ~5 dB):</b>静态 S3b 每帧 67,200 步 × 64³ 块 ≈ 8,400 次全体积等效遍历;动态 I3 是 480k 步 ÷ 90 帧 ÷ 8 块 ≈ 670 次/帧,少 12.6 倍(120k 步的运行只有 167 次/帧)。ESVR 论文自己的 vorts 配方(22,400 步)也只是 2,800 次/帧,离收敛很远。原生配方的 <code>position_lr</code> 是在梯度被压缩 4096 倍的前提下调出来的,修复后必须 ÷4096 补偿才能稳定。</div></section>''')
 
 # ---------- B deformable ----------
 parts.append('''<section class="method"><div class="mh"><span class="letter">B</span><h2>Deformable-MLP</h2></div>
 <div class="lineage">Deformable 3D Gaussians → canonical 椭球 + 独立形变 MLP(位置+时间 Fourier 编码 → 位移/旋转/尺度偏移),分支 <code>codex/deformable-esvr</code></div>
 <div class="tablewrap"><table><thead><tr><th>版本</th><th>配置 / 路径</th><th>规模 / 耗时</th><th>锚点 / 高斯</th><th>可视化</th><th>状态</th><th class="num">平均 PSNR</th></tr></thead><tbody>''')
 FIXED = lambda n: f'<b>{n:,}</b> 个高斯<br>固定,无增密<br><span class="sub">全程全部活跃(一套 canonical + 形变网络)</span>'
-parts.append(row("历史基线", "未修复核,PLY 热启动,21,401 图元固定", "output/dynamic/vorts90_full_geometry/", "<b>432 s</b> · 40,000 步<br>2.83 MB", "dynamic__vorts90_full_geometry", pill("old", "已过时"), "22.35 dB", counts=FIXED(21401)))
-parts.append(row("配置对齐版", "修复核,随机初始化,3 万图元(对齐 ESVR4D),单一共享学习率", "output/dynamic/vorts90_matched_comparison/", "<b>1023 s</b> · 40,000 步<br>3.19 MB", "dynamic__vorts90_matched_comparison", pill("old", "仅供对比"), "25.96 dB", counts=FIXED(30000)))
-parts.append(row("单变量学习率对照", "配置对齐 + 学习率换成原生量级,但 4 组仍合并为一个值", "output/dynamic/vorts90_matched_native_lr/", "<b>488 s</b> · 40,000 步<br>3.19 MB", "dynamic__vorts90_matched_native_lr", pill("old", "仅供对比"), "24.21 dB", counts=FIXED(30000)))
-parts.append(row("<b>原生学习率结构修复版</b>", "position/scale/rotation/opacity 拆成 4 个独立学习率(取 ESVR 自身静态值)+ 形变网络自己的组", "output/dynamic/vorts90_native_canonical_lr/", "<b>500 s</b> · 40,000 步<br>3.19 MB", "dynamic__vorts90_native_canonical_lr", pill("final"), "28.90 dB", best=True, counts=FIXED(30000)))
+parts.append(row("历史基线", "未修复核,PLY 热启动,21,401 图元固定", "output/dynamic/vorts90_full_geometry/", "<b>432 s</b> · 40,000 步<br>2.83 MB", "dynamic__vorts90_full_geometry", pill("old", "已过时"), "22.35 dB", counts=FIXED(21401), kernel="unfixed-by-design"))
+parts.append(row("配置对齐版", "修复核,随机初始化,3 万图元(对齐 ESVR4D),单一共享学习率", "output/dynamic/vorts90_matched_comparison/", "<b>1023 s</b> · 40,000 步<br>3.19 MB", "dynamic__vorts90_matched_comparison", pill("old", "仅供对比"), "25.96 dB", counts=FIXED(30000), kernel="fixed-script"))
+parts.append(row("单变量学习率对照", "配置对齐 + 学习率换成原生量级,但 4 组仍合并为一个值", "output/dynamic/vorts90_matched_native_lr/", "<b>488 s</b> · 40,000 步<br>3.19 MB", "dynamic__vorts90_matched_native_lr", pill("old", "仅供对比"), "24.21 dB", counts=FIXED(30000), kernel="fixed-script"))
+parts.append(row("<b>原生学习率结构修复版</b>", "position/scale/rotation/opacity 拆成 4 个独立学习率(取 ESVR 自身静态值)+ 形变网络自己的组", "output/dynamic/vorts90_native_canonical_lr/", "<b>500 s</b> · 40,000 步<br>3.19 MB", "dynamic__vorts90_native_canonical_lr", pill("final"), "28.90 dB", best=True, counts=FIXED(30000), kernel="fixed-script"))
 parts.append('''</tbody></table></div>
 <div class="callout">未实现增密(donor 的判据基于相机屏幕梯度)。canonical 学习率取 ESVR 自身值而非 donor 原生值,与另两个方法的"用 donor 原生值"标准不一致,尚无定论。</div></section>''')
 
@@ -229,9 +244,9 @@ parts.append('''<section class="method"><div class="mh"><span class="letter">C</
 <div class="lineage">4D Gaussian Splatting(复旦)→ 原生 4D 时空协方差,对时间做 Schur 补条件化得到每时刻的 3D 椭球再交给 ESVR 核,无网络;分支 <code>codex/4dgs-esvr</code></div>
 <div class="tablewrap"><table><thead><tr><th>版本</th><th>配置 / 路径</th><th>规模 / 耗时</th><th>锚点 / 高斯</th><th>可视化</th><th>状态</th><th class="num">平均 PSNR</th></tr></thead><tbody>''')
 FIXED4D = lambda n: f'<b>{n:,}</b> 个 4D 高斯<br>固定,无增密<br><span class="sub">每时刻按时间边缘 &gt; 0.05 切片选入</span>'
-parts.append(row("合并 LR 组(修复前)", "修复核,3 万图元固定,增密关闭,xyz/time/scale/opacity 共用 lr 5e-3", "output/esvr4d/vorts90_fixed_points/", "<b>179 s</b> · 40,000 步<br>2.29 MB", "esvr4d__vorts90_fixed_points", pill("old", "已定位为 bug"), "28.77 dB", counts=FIXED4D(30000)))
-parts.append(row("原生 LR 结构(步数未对齐)", "5 组原生学习率(xyz 1.6e-4→1.6e-6 等),但只跑 30,000 步", "output/esvr4d/vorts90_native_lr/", "<b>158 s</b> · 30,000 步<br>2.29 MB", "esvr4d__vorts90_native_lr", pill("old", "被步数对齐版取代"), "25.09 dB", counts=FIXED4D(30000)))
-parts.append(row("<b>原生 LR 结构(步数对齐)</b>", "同上,步数补齐到 40,000,与首行严格单变量;重载零误差", "output/esvr4d/vorts90_native_lr_40k/", "<b>213 s</b> · 40,000 步<br>2.29 MB", "esvr4d__vorts90_native_lr_40k", pill("final"), "25.68 dB", best=True, counts=FIXED4D(30000)))
+parts.append(row("合并 LR 组(修复前)", "修复核,3 万图元固定,增密关闭,xyz/time/scale/opacity 共用 lr 5e-3", "output/esvr4d/vorts90_fixed_points/", "<b>179 s</b> · 40,000 步<br>2.29 MB", "esvr4d__vorts90_fixed_points", pill("old", "已定位为 bug"), "28.77 dB", counts=FIXED4D(30000), kernel="fixed-likely"))
+parts.append(row("原生 LR 结构(步数未对齐)", "5 组原生学习率(xyz 1.6e-4→1.6e-6 等),但只跑 30,000 步", "output/esvr4d/vorts90_native_lr/", "<b>158 s</b> · 30,000 步<br>2.29 MB", "esvr4d__vorts90_native_lr", pill("old", "被步数对齐版取代"), "25.09 dB", counts=FIXED4D(30000), kernel="fixed-likely"))
+parts.append(row("<b>原生 LR 结构(步数对齐)</b>", "同上,步数补齐到 40,000,与首行严格单变量;重载零误差", "output/esvr4d/vorts90_native_lr_40k/", "<b>213 s</b> · 40,000 步<br>2.29 MB", "esvr4d__vorts90_native_lr_40k", pill("final"), "25.68 dB", best=True, counts=FIXED4D(30000), kernel="fixed-likely"))
 parts.append('''</tbody></table></div>
 <div class="callout">原生位置学习率比共享值小 30–1000 倍,而 ESVR4D 的运动完全依赖 xyz 本身移动,所以修正学习率结构后 PSNR 反而下降 −3.09 dB(单变量验证)。增密实现了但关闭:开启后质量回退(加法渲染下 clone/split 原地翻倍),次要因素未查明。</div></section>''')
 
@@ -288,7 +303,7 @@ SCREEN = [("T0_control", "基线(当前默认)", "13.3", 30.823, "27.91 – 32.4
  ("T9_K5_cap80k", "K = 5,锚点上限 80k", "20.2", 31.581, "27.79 – 33.11", "+0.76,大小 ×1.5", True),
  ("T10_K3", "K = 3", "8.8", 30.332, "27.01 – 31.58", "−0.49,大小 −34%", False)]
 for name, what, mb, psnr, mm, note, best in SCREEN:
-    parts.append(row(name, what + (f'<div class="note">{note}</div>' if note else ""), f"output/scaffold4d/screen_fixed/{name}/", f"40,000 步<br>{mb} MB", "screen__" + name, pill("final", "筛选"), f"{psnr:.2f} dB", mm, best, counts=count_cell("screen_fixed/" + name)))
+    parts.append(row(name, what + (f'<div class="note">{note}</div>' if note else ""), f"output/scaffold4d/screen_fixed/{name}/", f"40,000 步<br>{mb} MB", "screen__" + name, pill("final", "筛选"), f"{psnr:.2f} dB", mm, best, counts=count_cell("screen_fixed/" + name), kernel="fixed"))
 parts.append('''</tbody></table></div>
 <div class="callout"><b>筛选结论:</b>七种"回收/保护死容量"的修法没有一种有效,三种有害。死容量是存储上的浪费,不是 PSNR 的瓶颈——40k 锚点上模型已把可用容量用尽,多余孩子被压死是优化器在"关闭"它们(上游用 tanh 免费掩掉,这里只能压小/压暗)。K=3/5/10 每字节效率相近,K=5 略优。</div>
 </section>
@@ -326,6 +341,26 @@ parts.append('''</tbody></table></div>
 <div class="callout"><b>两个维度近似可加:</b>预算 40k → 150k 约 +2.5 dB,步数 ×4 约 +1.5 dB,再往上都饱和(150k → 300k +0.3,480k → 960k −0.1)。I1(衰减 1/10)因四个运行并发显存吃紧而停止(H2 已表明 1/10 与 1/100 在噪声内)。最佳 I3 = 39.73 dB,距 40 dB 均值 0.27,已在种子噪声(0.42)之内;最高帧 40.69。</div>
 </section>''')
 
+parts.append('''<section class="method"><div class="mh"><span class="letter">E</span><h2>实现与上游的对应与偏离(审计 2026-09-22)</h2></div>
+<div class="lineage">基元、核、监督来自 ESVR;锚点/特征/子椭球结构、线性运动、广义高斯时间门、7 组优化器、dynamic-aware 生长来自 4D-Scaffold-GS 官方代码。不是逐行等价移植;每一处偏离及其实测影响如下(详见 <code>docs/ESVR_SCAFFOLD4D.md</code>)</div>
+<div class="tablewrap"><table class="dev"><thead><tr><th>偏离上游之处</th><th>原因</th><th>实测</th></tr></thead><tbody>
+<tr><td>opacity 头用 sigmoid,而非 tanh + “&gt;0 掩码”</td><td>tanh + 零特征初始化在 ~50 步内让全部孩子转负、永久死亡</td><td>没有它无法训练</td></tr>
+<tr><td>上游 <code>min_opacity</code> 锚点剪枝几乎不触发</td><td>K 个 sigmoid 强度之和很少低于每次 0.005;上游 tanh 给出精确的 0</td><td>每次运行只删 1–70 个;<code>--prune-dead</code>(ESVR 的 prune_zeros / 暗剪枝)能回收但不改变 PSNR(D.4)</td></tr>
+<tr><td>生长统计用 3D 中心梯度代替 2D 屏幕梯度</td><td>没有相机;这是 ESVR 自己 <code>add_densification_stats</code> 的量</td><td>阈值按 3D 梯度 p90 校准(修复核 1.2e-3)</td></tr>
+<tr><td>“观测足够”判据按块占体积比例缩放</td><td>孩子只在其 64³ 块被采到时才被观测</td><td>—</td></tr>
+<tr><td>锚点数上限 + 按投票强度排序准入</td><td>上游无上限</td><td>40k / 100k / 150k / 300k 均已测</td></tr>
+<tr><td>所有格子层级每轮都执行(<code>--grow-upstream-level-skip</code> 恢复上游规则)</td><td>上游只在粗层级本轮长出锚点时才执行细层级;09-22 审计才发现</td><td>未测</td></tr>
+<tr><td>锚点时间均匀随机初始化(上游全在 t₀)</td><td>体数据没有 SfM 帧</td><td><code>--init data</code>(按 GT 采样)vs 随机:0.0 dB</td></tr>
+<tr><td>子尺度 0.5 体素下限;σ ∈ [1e-2, 1e2];offset ∈ [−10, 10]</td><td>float32 / CUDA 失效模式(NaN、亚体素孩子零梯度)</td><td>下限:去掉 −3.3 dB</td></tr>
+<tr><td>时间截断 1e-3</td><td>效率;低于核的 1/255</td><td>—</td></tr>
+<tr><td>体积正则作用于全部时间激活的孩子(上游作用于被渲染的)</td><td>mini-batch 数据项 + 全局正则</td><td>只作用可见孩子 0.0 dB;去掉 −0.6 dB</td></tr>
+<tr><td><code>--final-lr-scale 0.01</code>(ESVR 配方,<b>非默认</b>)</td><td>上游恒定的 4 组学习率在块监督下后期震荡 ±0.7 dB;ESVR 自身学习率也衰减</td><td>150k 锚点 +5 dB;默认保持 1.0 使 argparse 默认 = 论文值</td></tr>
+<tr><td>每帧优化预算约为静态 ESVR 的 1/12</td><td>90 帧共享一次训练</td><td>静态天花板研究(A 节)</td></tr>
+</tbody></table></div>
+<div class="callout">逐段核对结论(代码 vs <code>generate_neural_gaussians</code> / <code>training_statis</code> / <code>anchor_growing</code> / <code>adjust_anchor</code> / <code>train.py</code>,以及 ESVR 的 <code>train_chunk.py</code> / <code>gaussian_model.py</code> / <code>forward.cu</code>):4D home 位置、线性运动、时间门(β=4)、时不变尺度旋转、7 组学习率与 <code>expon_lr</code>、增密统计权重、三层级格子生长、特征 max-pool、Adam eps、损失三项、SSIM(= 各 x 切片 2D SSIM 均值,与 ESVR 相同)、块坐标约定、评估口径(预测本在 [0,1] 内,裁剪 Δ=0)均一致;CUDA 位置梯度经有限差分验证(比值 1.00);G5/H4/I3 重载逐字节一致;压缩文件可被 <code>inference_scaffold4d.py</code> 读取并复现(H4 第 46 帧 39.34 vs 39.34 dB)。<br><br><b>独立审阅(2026-09-22,另一个不带本会话先验的代理逐行对照上游代码):</b>未发现影响任何已报数字的错误;它用单体素定位验证了块坐标约定与分块评估逐位一致,核对了扁平索引记账、优化器状态切片、生长/剪枝与上游的逐项对应、<code>expon_lr</code>、压缩位掩码往返、数据轴序与时间归一化。提出的 9 项健壮性/文档问题(缺失参数被 <code>strict=False</code> 掩盖、<code>--grow-depth 4</code> 格子尺寸为 0、<code>--init data</code> 的最近邻只用 xyz 且 N²、时间门测试靠浮点下溢通过、文档数字漂移等)已全部修复并提交。<b>本页的每一行结果数字都经过重新计算,来源仅为各运行的完整 90 帧 <code>evaluation/metrics.json</code>。</b></div>
+<div class="callout"><b>关于“无用高斯”与模型大小(2026-09-22):</b>这是表征层面的结构性现象,不是生长/剪枝代码的错误。每个锚点固定生成 K=10 个孩子,不需要的孩子只能被优化器“关掉”——上游用 tanh 掩码免费关闭(但其 offset 同样占存储,上游论文报的 storage 也包含全部 K 个 offset);在 ESVR 的加法渲染下只能压暗/压小,结果相同:存储里 60–90% 是死孩子。训练时删掉它们的两种途径都已测过:死锚点回收(T2)让新生锚点以同样速度死去,有用率不变;上游 <code>min_opacity</code> 在 sigmoid 下失效。<b>有效的做法是训练后压缩</b>(精确删暗孩子 + 位掩码 + fp16,6–7×,PSNR 不变),以及用更小的锚点上限换更长训练(J1:40k 锚点 / 480k 步 = 36.9 dB,压缩后 2.6 MB)。“压缩前就小”的路线正在 K4(60k 上限 + 回收,480k 步)中测试。</div>
+</section>
+''')
 parts.append(f'''<footer>评测协议:全部实验用全 90 帧训练(无留出),PSNR 为归一化 [0,1] 值域下的 3D 体素 PSNR 逐帧均值;标注"当前结论"的运行已做 checkpoint 重载逐字节校验。规模列:训练时长取自各运行的 <code>train.jsonl</code>(RTX 5090,多数运行 2–3 个并发共享 GPU);模型大小 = 推理所需权重张量的 float32 字节数(Scaffold4D:每锚点 83 float ≈ 332 B,三个 MLP 共约 28 KB),不含 Adam 状态、未做量化/熵编码。可视化列点击在页内打开各运行自己生成的 <code>quality_curves.png</code>(逐帧 PSNR/MAE 曲线)、<code>slice_comparison.png</code>(六个时刻的中央 Z 切片 GT/预测/误差)和 <code>training_frames_dvr.gif</code>(90 帧体渲染四联:GT | 预测 | 体素级绝对误差 | 渲染图像级绝对误差,误差面板 inferno 配色、上限 0.1)。动图为随页发布方便转成了 MP4(10 fps,H.264),原始 GIF 在各运行目录;只有各方法的关键运行带动图,其余运行的 GIF 同样在目录里。完整记录见各目录 <code>RESULTS.md</code>、<code>docs/ESVR_SCAFFOLD4D.md</code>、<code>output/scaffold4d/ablation/RESULTS.md</code>。</footer>
 </div>
 <script>
@@ -341,6 +376,7 @@ for(const g of [25,30,35,40,45,50]){{s+=`<line x1="${{L}}" x2="${{W-R}}" y1="${{
 for(const g of [1,2,5,10,20,50,100,200,500]){{s+=`<line y1="${{T}}" y2="${{H-Bm}}" x1="${{X(g)}}" x2="${{X(g)}}" stroke="var(--line)" stroke-dasharray="2 4"/><text x="${{X(g)}}" y="${{H-Bm+16}}" text-anchor="middle">${{g}}</text>`;}}
 s+=`<text x="${{(L+W-R)/2}}" y="${{H-6}}" text-anchor="middle">模型大小 (MB, log)</text>`;
 s+=`<line x1="${{L}}" x2="${{W-R}}" y1="${{Y(50)}}" y2="${{Y(50)}}" stroke="var(--accent)" stroke-dasharray="6 4" opacity=".7"/><text x="${{W-R-4}}" y="${{Y(50)-5}}" text-anchor="end" style="fill:var(--accent)">目标 50 dB</text>`;
+s+=`<line x1="${{L}}" x2="${{W-R}}" y1="${{Y(30.39)}}" y2="${{Y(30.39)}}" stroke="var(--ink3)" stroke-dasharray="2 4"/><text x="${{L+6}}" y="${{Y(30.39)-5}}" style="fill:var(--ink3)">零模型:复制上一帧 30.39 dB</text>`;
 for(const p of P){{const r=(p.s==="s4d_fix"||p.s==="s4d_compact")?7:(p.s==="static"?6:5);const op=p.f||p.s==="s4d_old"?.35:1;const st=(p.s==="s4d_fix"||p.s==="s4d_compact")?`stroke="var(--ink)" stroke-width="1.5"`:"";
 s+=`<circle class="pt" cx="${{X(p.x)}}" cy="${{Y(p.y)}}" r="${{r}}" fill="${{C[p.s]}}" opacity="${{op}}" ${{st}} data-l="${{p.l}} · ${{p.x}} MB · ${{p.y.toFixed(2)}} dB"/>`;}}
 s+=`</svg><div class="tip" id="tip"></div>`;
