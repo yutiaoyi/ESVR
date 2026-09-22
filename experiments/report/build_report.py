@@ -15,12 +15,13 @@ def count_cell(key):
     s = stats.get(key)
     if not s:
         return "—"
-    mean = (f'<br><span class="sub">有用/查询 90 帧均值 <b>{s["useful_query_mean"]:,}</b> ({s["useful_query_min"]:,}–{s["useful_query_max"]:,})</span>'
+    nf = s.get("frames", 90)
+    mean = (f'<br><span class="sub">有用/查询 {nf} 帧均值 <b>{s["useful_query_mean"]:,}</b> ({s["useful_query_min"]:,}–{s["useful_query_max"]:,})</span>'
             if "useful_query_mean" in s else "")
     return (f'<b>{s["anchors"]:,}</b> 锚点 × {s["children"]}<br>= {s["total"]:,} 高斯'
             f'<br><span class="sub">活跃/查询 {s["active"]:,}</span><br><span class="sub">有用/查询 t=0.5 {s["useful_query"]:,}</span>{mean}'
             f'<br><span class="sub">有用总数 {s["useful_total"]:,} ({s["useful_total"] / s["total"]:.0%})</span>'
-            + (f'<br><span class="sub">90 帧从未选入 {s["never_selected"]:,} ({s["never_selected"] / s["total"]:.0%}),其中“有用” {s["useful_never_selected"]:,}</span>' if "never_selected" in s else ""))
+            + (f'<br><span class="sub">{nf} 帧从未选入 {s["never_selected"]:,} ({s["never_selected"] / s["total"]:.0%}),其中“有用” {s["useful_never_selected"]:,}</span>' if "never_selected" in s else ""))
 thumbs = {os.path.basename(p) for p in glob.glob(os.path.join(IMG, "*.jpg"))}
 
 def viz(key):
@@ -68,6 +69,8 @@ def s4d(name, run, what, status, best=False, note=""):
     if run.startswith(("decay/", "long/")):
         key = "scaffold4d__" + run.replace("/", "__")
     scale = f'<b>{r["seconds"]} s</b> · {r["steps"]:,} 步<br>{r["mb"]:.2f} MB'
+    if r.get("frames", 90) != 90:
+        scale += f'<br><span class="sub"><b>只训 {r["frames"]} 帧</b>(PSNR 为这 {r["frames"]} 帧均值)</span>'
     c = compact.get(run)
     if c:
         scale += f'<br><span class="sub">压缩后 <b>{c["mb_after"]:.1f} MB</b> · {c["psnr_after"]:.2f} dB ({c["psnr_delta"]:+.3f})</span>'
@@ -99,15 +102,17 @@ for run, r in runs.items():
         pt("s4d_bad", r["mb"], r["psnr"], "ablation/" + run.split("/")[1] + "(未修复核)", faded=True)
     elif run.startswith("fixed_kernel/"):
         pt("s4d_fix", r["mb"], r["psnr"], "fixed_kernel/" + run.split("/")[1])
-    elif run.startswith(("scale/", "decay/", "long/")):
-        pt("s4d_fix", r["mb"], r["psnr"], run)
+    elif run.startswith(("scale/", "decay/", "long/", "fifty/")):
+        partial = r.get("frames", 90) != 90
+        label = run + (f"(只训 {r['frames']} 帧,不与 90 帧数字可比)" if partial else "")
+        pt("s4d_fix", r["mb"], r["psnr"], label, faded=partial)
         if run in compact:
-            pt("s4d_compact", compact[run]["mb_after"], compact[run]["psnr_after"], run + " · 压缩后")
+            pt("s4d_compact", compact[run]["mb_after"], compact[run]["psnr_after"], label + " · 压缩后", faded=partial)
 
 # ---------- page ----------
 today = datetime.date.today().isoformat()
 n_s4d = len(runs)
-best_key, best_fix = max(((k, r) for k, r in runs.items() if k.startswith(("fixed_kernel/", "scale/", "decay/", "long/"))), key=lambda kv: kv[1]["psnr"])
+best_key, best_fix = max(((k, r) for k, r in runs.items() if k.startswith(("fixed_kernel/", "scale/", "decay/", "long/", "fifty/")) and r.get("frames", 90) == 90), key=lambda kv: kv[1]["psnr"])
 
 parts = []
 parts.append(f'''<title>ESVR 时变扩展实验记录</title>
@@ -185,11 +190,11 @@ footer{{margin-top:48px;padding-top:18px;border-top:1px solid var(--line);font-s
 <div class="stat"><div class="l">当前最佳动态模型</div><b class="hero">{best_fix["psnr"]:.2f} dB</b><div class="s">Scaffold4D · {best_fix["anchors"]//1000}k 锚点 · {best_fix["steps"]//1000}k 步 · 压缩后 {compact.get(best_key, {}).get("mb_after", best_fix["mb"]):.1f} MB</div></div>
 <div class="stat"><div class="l">静态天花板(单帧,修复核)</div><b>49.67 dB</b><div class="s">139k 基元 · 67k 步 · 6.1 MB/帧;21k 基元 / 22k 步 = 41.72</div></div>
 <div class="stat"><div class="l">Scaffold4D 已完成运行</div><b>{n_s4d + 11}</b><div class="s">含 15 组未修复核(作废)、11 组筛选、修复核完整训练 {n_s4d - 17} 组</div></div>
-<div class="stat"><div class="l">目标</div><b>50 dB</b><div class="s">压缩前模型尽量小;静态单帧要 14 万基元 / 67k 步才到</div></div>
+<div class="stat"><div class="l">目标</div><b>50 dB</b><div class="s">压缩前模型尽量小;静态单帧要 14 万基元 / 67k 步才到。探针:只训 10 帧、每帧优化 ×9 也只到 41.2(D.8)</div></div>
 </div>
 <div class="panel">
 <h2>质量 – 模型大小总览</h2>
-<p class="lead">横轴为推理所需权重的 float32 大小(对数),纵轴为 90 帧平均 PSNR。灰点是逐帧独立训练的静态 ESVR;淡蓝点是今天用未修复 CUDA 核跑的 Scaffold4D 消融(作废,仅作记录)。悬停查看名称。</p>
+<p class="lead">横轴为推理所需权重的 float32 大小(对数),纵轴为 90 帧平均 PSNR。灰点是逐帧独立训练的静态 ESVR;淡蓝点是用未修复 CUDA 核跑的 Scaffold4D 消融(作废,仅作记录)和只训 10 帧的探针 K1(不与 90 帧可比)。悬停查看名称。</p>
 <div class="chartwrap" id="chart"></div>
 <div class="legend"><span><i style="background:var(--c-static)"></i>静态 ESVR(逐帧)</span><span><i style="background:var(--c-deform)"></i>Deformable-MLP</span><span><i style="background:var(--c-esvr4d)"></i>ESVR4D</span><span><i style="background:var(--c-s4d)"></i>Scaffold4D(修复核)</span><span><i style="background:var(--c-s4d);opacity:.35"></i>Scaffold4D(早期 / 未修复核)</span><span><i style="background:var(--good)"></i>Scaffold4D 训练后压缩(fp16 + 剪枝)</span></div>
 </div>
@@ -341,7 +346,22 @@ parts.append('''</tbody></table></div>
 <div class="callout"><b>两个维度近似可加:</b>预算 40k → 150k 约 +2.5 dB,步数 ×4 约 +1.5 dB,再往上都饱和(150k → 300k +0.3,480k → 960k −0.1)。I1(衰减 1/10)因四个运行并发显存吃紧而停止(H2 已表明 1/10 与 1/100 在噪声内)。最佳 I3 = 39.73 dB,距 40 dB 均值 0.27,已在种子噪声(0.42)之内;最高帧 40.69。</div>
 </section>''')
 
-parts.append('''<section class="method"><div class="mh"><span class="letter">E</span><h2>实现与上游的对应与偏离(审计 2026-09-22)</h2></div>
+parts.append('''<section class="method"><h3 class="grp">D.8 冲 50 dB 的四个探针(修复核,衰减 1/100,均以 H4 = 39.43 dB 为基准单变量;2026-09-22)</h3>''' + th)
+FIFTY = [("K1_10frames_480k", "只训第 41–50 帧,步数不变 → 每帧优化量 ×9;<code>--grow-t-size 1/89</code> 保持时间格与 90 帧一致(默认会变成 1/9)", "探针",
+          "10 帧均值 <b>41.20</b>(H4 在同 10 帧 39.43,I3 39.68):每帧优化 ×9 只 +1.8 dB。锚点只长到 49k(上限 150k 没长满,生长在 2,384 次检查里逐渐停止),每次查询有用孩子 3.9 万 ≈ H4 的 2.3 倍。容量翻倍 + 优化 ×9 仍比每帧预算相近的静态单帧(S3b:1.6 万基元 / 67k 步 = 44.7)低 3.5 dB → 缺口不只是训练量。副作用:随机 t 初始化让 49 万孩子里 30 万在这 10 个时刻从未被选中,其中 6.3 万“有用”孩子活在 41–50 帧之外的时间上,白占存储(压缩后 3.5 MB 已含它们)。<b>不与 90 帧数字直接比较。</b>", False),
+         ("K2_block128_60k", "整体积(128³)监督、60k 步:与 480k 步 × 64³ 计算量相当,但优化器更新次数只有 1/8", "负面记录",
+          "<b>33.32</b>,比 H4 低 6.1 dB,和 120k 步 × 64³ 的 F_default(31.8)同一档。同等 GPU 计算量下,瓶颈是<b>更新次数</b>,不是每步监督的范围;整体积监督也没有让生长更好(只长到 12k 锚点)。", False),
+         ("K3_grow75_480k", "生长窗口 50% → 75% 的训练(<code>--densify-until 360000</code>)", "负面记录",
+          "<b>38.94</b>(−0.49,略超种子噪声 0.42)。150k 上限照样长满,但更晚加入的锚点在学习率已衰减后没有时间训好:每次查询有用孩子从 H4 的 1.67 万降到 1.33 万,有用总数 8.8 万 vs 12.9 万。生长窗口 50%(与上游 60k/120k 的比例一致)已经足够。", False),
+         ("K4_cap60k_prune_480k", "锚点上限 60k + <code>--prune-dead</code>(ESVR 式死锚点回收;累计回收 26,190 个锚点后由生长补回)", "当前结论",
+          "<b>38.20</b>,压缩前 <b>20 MB</b> / 压缩后 4.0 MB。比 H4 低 1.2 dB(大小 2/5),比 J1(40k 上限,13 MB)高 1.3 dB:40k → 60k → 150k 锚点 = 36.9 → 38.2 → 39.4,K4 落在同一条预算曲线上,回收带来的“新鲜”锚点没有额外收益(与 D.4 的 T2 一致)。这是目前“压缩前就小”路线的最好点。", True)]
+for name, what, tag, note, best in FIFTY:
+    kind = {"探针": "final", "负面记录": "neg", "当前结论": "final"}[tag]
+    parts.append(s4d(name, "fifty/" + name, what, pill(kind, tag), best=best, note=note))
+parts.append('''</tbody></table></div>
+<div class="callout"><b>结论:四条路都没有把 90 帧模型推过 40 dB,K1 给出了最重要的信息。</b>即使每帧优化量 ×9、每时刻有用高斯翻倍,10 帧模型也只有 41.2 dB;而同一基元、同一核的静态单帧在更少基元、相近每帧优化量下有 44.7(S3b),加到 14 万基元有 49.7(S5b)。所以 50 dB 的缺口有三层:(1) <b>时间维共享的表征代价</b>——所有时刻的孩子都由同一个锚点特征经共享 MLP 生成,只能做线性运动 + 一个广义高斯时间门,一个孩子跨帧复用时对每一帧都是近似;(2) <b>每时刻有效容量不足</b>——150k 锚点 × 10 孩子里每时刻只有约 1.7–2 万个有用高斯,而静态 50 dB 需要每时刻约 14 万个,现有生长规则(只往空格子里长、3D 梯度过阈值)长不出、也养不活这么多;(3) 步数在 480k 附近饱和(I2)。K2 说明瓶颈是更新次数而非批量;K3 说明把生长拖后无益;K4 说明小上限 + 回收在同一条预算曲线上,是控制“压缩前大小”的正当手段但不涨 PSNR。<br><br><b>下一步候选(均未做):</b>a) 提高每时刻有效容量——放宽“只长空格子”的限制、降低生长阈值或让每个锚点生成更多能存活的孩子,并用 K4 式上限 + 回收控制大小;b) 提高时间分辨力——每锚点分段运动、更窄的时间门或“时间局部”锚点,减少跨帧复用带来的近似;c) 补做<b>留出帧验证</b>,在加容量之前确认模型不是在逐帧记忆。</div>
+</section>
+<section class="method"><div class="mh"><span class="letter">E</span><h2>实现与上游的对应与偏离(审计 2026-09-22)</h2></div>
 <div class="lineage">基元、核、监督来自 ESVR;锚点/特征/子椭球结构、线性运动、广义高斯时间门、7 组优化器、dynamic-aware 生长来自 4D-Scaffold-GS 官方代码。不是逐行等价移植;每一处偏离及其实测影响如下(详见 <code>docs/ESVR_SCAFFOLD4D.md</code>)</div>
 <div class="tablewrap"><table class="dev"><thead><tr><th>偏离上游之处</th><th>原因</th><th>实测</th></tr></thead><tbody>
 <tr><td>opacity 头用 sigmoid,而非 tanh + “&gt;0 掩码”</td><td>tanh + 零特征初始化在 ~50 步内让全部孩子转负、永久死亡</td><td>没有它无法训练</td></tr>
@@ -358,7 +378,7 @@ parts.append('''<section class="method"><div class="mh"><span class="letter">E</
 <tr><td>每帧优化预算约为静态 ESVR 的 1/12</td><td>90 帧共享一次训练</td><td>静态天花板研究(A 节)</td></tr>
 </tbody></table></div>
 <div class="callout">逐段核对结论(代码 vs <code>generate_neural_gaussians</code> / <code>training_statis</code> / <code>anchor_growing</code> / <code>adjust_anchor</code> / <code>train.py</code>,以及 ESVR 的 <code>train_chunk.py</code> / <code>gaussian_model.py</code> / <code>forward.cu</code>):4D home 位置、线性运动、时间门(β=4)、时不变尺度旋转、7 组学习率与 <code>expon_lr</code>、增密统计权重、三层级格子生长、特征 max-pool、Adam eps、损失三项、SSIM(= 各 x 切片 2D SSIM 均值,与 ESVR 相同)、块坐标约定、评估口径(预测本在 [0,1] 内,裁剪 Δ=0)均一致;CUDA 位置梯度经有限差分验证(比值 1.00);G5/H4/I3 重载逐字节一致;压缩文件可被 <code>inference_scaffold4d.py</code> 读取并复现(H4 第 46 帧 39.34 vs 39.34 dB)。<br><br><b>独立审阅(2026-09-22,另一个不带本会话先验的代理逐行对照上游代码):</b>未发现影响任何已报数字的错误;它用单体素定位验证了块坐标约定与分块评估逐位一致,核对了扁平索引记账、优化器状态切片、生长/剪枝与上游的逐项对应、<code>expon_lr</code>、压缩位掩码往返、数据轴序与时间归一化。提出的 9 项健壮性/文档问题(缺失参数被 <code>strict=False</code> 掩盖、<code>--grow-depth 4</code> 格子尺寸为 0、<code>--init data</code> 的最近邻只用 xyz 且 N²、时间门测试靠浮点下溢通过、文档数字漂移等)已全部修复并提交。<b>本页的每一行结果数字都经过重新计算,来源仅为各运行的完整 90 帧 <code>evaluation/metrics.json</code>。</b></div>
-<div class="callout"><b>关于“无用高斯”与模型大小(2026-09-22):</b>这是表征层面的结构性现象,不是生长/剪枝代码的错误。每个锚点固定生成 K=10 个孩子,不需要的孩子只能被优化器“关掉”——上游用 tanh 掩码免费关闭(但其 offset 同样占存储,上游论文报的 storage 也包含全部 K 个 offset);在 ESVR 的加法渲染下只能压暗/压小,结果相同:存储里 60–90% 是死孩子。训练时删掉它们的两种途径都已测过:死锚点回收(T2)让新生锚点以同样速度死去,有用率不变;上游 <code>min_opacity</code> 在 sigmoid 下失效。<b>有效的做法是训练后压缩</b>(精确删暗孩子 + 位掩码 + fp16,6–7×,PSNR 不变),以及用更小的锚点上限换更长训练(J1:40k 锚点 / 480k 步 = 36.9 dB,压缩后 2.6 MB)。“压缩前就小”的路线正在 K4(60k 上限 + 回收,480k 步)中测试。</div>
+<div class="callout"><b>关于“无用高斯”与模型大小(2026-09-22):</b>这是表征层面的结构性现象,不是生长/剪枝代码的错误。每个锚点固定生成 K=10 个孩子,不需要的孩子只能被优化器“关掉”——上游用 tanh 掩码免费关闭(但其 offset 同样占存储,上游论文报的 storage 也包含全部 K 个 offset);在 ESVR 的加法渲染下只能压暗/压小,结果相同:存储里 60–90% 是死孩子。训练时删掉它们的两种途径都已测过:死锚点回收(T2)让新生锚点以同样速度死去,有用率不变;上游 <code>min_opacity</code> 在 sigmoid 下失效。<b>有效的做法是训练后压缩</b>(精确删暗孩子 + 位掩码 + fp16,6–7×,PSNR 不变),以及用更小的锚点上限换更长训练(J1:40k 锚点 / 480k 步 = 36.9 dB,压缩后 2.6 MB)。“压缩前就小”的路线 K4(60k 上限 + 回收,480k 步)= 38.20 dB,压缩前 20 MB、压缩后 4.0 MB:落在 J1(40k)– H4(150k)同一条预算曲线上,回收本身没有额外增益(D.8)。</div>
 </section>
 ''')
 parts.append(f'''<footer>评测协议:全部实验用全 90 帧训练(无留出),PSNR 为归一化 [0,1] 值域下的 3D 体素 PSNR 逐帧均值;标注"当前结论"的运行已做 checkpoint 重载逐字节校验。规模列:训练时长取自各运行的 <code>train.jsonl</code>(RTX 5090,多数运行 2–3 个并发共享 GPU);模型大小 = 推理所需权重张量的 float32 字节数(Scaffold4D:每锚点 83 float ≈ 332 B,三个 MLP 共约 28 KB),不含 Adam 状态、未做量化/熵编码。可视化列点击在页内打开各运行自己生成的 <code>quality_curves.png</code>(逐帧 PSNR/MAE 曲线)、<code>slice_comparison.png</code>(六个时刻的中央 Z 切片 GT/预测/误差)和 <code>training_frames_dvr.gif</code>(90 帧体渲染四联:GT | 预测 | 体素级绝对误差 | 渲染图像级绝对误差,误差面板 inferno 配色、上限 0.1)。动图为随页发布方便转成了 MP4(10 fps,H.264),原始 GIF 在各运行目录;只有各方法的关键运行带动图,其余运行的 GIF 同样在目录里。完整记录见各目录 <code>RESULTS.md</code>、<code>docs/ESVR_SCAFFOLD4D.md</code>、<code>output/scaffold4d/ablation/RESULTS.md</code>。</footer>

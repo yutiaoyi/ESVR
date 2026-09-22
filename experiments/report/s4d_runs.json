@@ -383,5 +383,53 @@
   "mb": 13.31,
   "seconds": 11119,
   "steps": 480000
+ },
+ {
+  "run": "fifty/K1_10frames_480k",
+  "psnr": 41.2,
+  "pmin": 39.93,
+  "pmax": 41.65,
+  "anchors": 49289,
+  "children": 10,
+  "mb": 16.39,
+  "seconds": 10859,
+  "steps": 480000,
+  "frames": 10
+ },
+ {
+  "run": "fifty/K2_block128_60k",
+  "psnr": 33.322,
+  "pmin": 30.63,
+  "pmax": 34.15,
+  "anchors": 12152,
+  "children": 10,
+  "mb": 4.06,
+  "seconds": 1520,
+  "steps": 60000,
+  "frames": 90
+ },
+ {
+  "run": "fifty/K3_grow75_480k",
+  "psnr": 38.937,
+  "pmin": 36.27,
+  "pmax": 39.74,
+  "anchors": 150000,
+  "children": 10,
+  "mb": 49.83,
+  "seconds": 11215,
+  "steps": 480000,
+  "frames": 90
+ },
+ {
+  "run": "fifty/K4_cap60k_prune_480k",
+  "psnr": 38.198,
+  "pmin": 35.51,
+  "pmax": 39.14,
+  "anchors": 60000,
+  "children": 10,
+  "mb": 19.95,
+  "seconds": 10908,
+  "steps": 480000,
+  "frames": 90
  }
 ]
