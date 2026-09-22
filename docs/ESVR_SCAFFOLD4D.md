@@ -258,6 +258,8 @@ what was measured:
 | anchor time initialised uniformly in [0,1] (upstream: all at t₀) | volumes have no SfM frame | `--init data` (GT-sampled 4D anchors) vs random: 0.0 dB |
 | 0.5-voxel floor on child scale; σ ∈ [1e-2, 1e2]; offset ∈ [−10, 10] | float32/CUDA failure modes (NaN, zero-gradient sub-voxel children) | floor: −3.3 dB without it |
 | temporal inclusion cutoff 1e-3 | efficiency; below the kernel's 1/255 | — |
+| σ upper clamp 1e2 (`--sigma-max`) is **binding**: 37 % (H4) / 45 % (I3) of children sit on it, i.e. want a temporal half-width below 0.8 frames (2026-09-22 `diagnose_scaffold4d.py`; median useful half-width 3.5–4 frames, so children barely share across time) | numerical guardrail; upstream has no clamp | `screen_fixed/T5` (1e3, 40k steps) 0.0 dB; `next/L1_sigma1000_480k` at full length pending |
+| `--error-sampling α` (off by default): (frame, tile) drawn ∝ last-seen block MSE^α with a uniform share (`scaffold4d/sampling.py`) | ESVR samples sub-volumes uniformly; upstream renders whole frames. `fifty/K2` showed optimizer updates are the bottleneck, so spend them where the error is | `next/M1_errsample_480k` pending |
 | global volume regularizer on all time-active children (upstream: on rendered children) | mini-batch data term + global regularizer | visibility-gated variant 0.0 dB; removing it −0.6 dB |
 | `--final-lr-scale 0.01` (ESVR recipe, **not the default**) | four upstream-constant LR groups oscillate ±0.7 dB late in training under block supervision | +5 dB at 150k anchors; default stays 1.0 so argparse defaults remain the paper's |
 | per-frame optimisation budget ≈ 1/12 of static ESVR's | 90 frames share one run | static ceiling study, `output/experiments/static_ceiling/RESULTS.md` |
