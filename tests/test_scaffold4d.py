@@ -106,7 +106,7 @@ class Mathematics(unittest.TestCase):
             model = ScaffoldESVR(anchors=3, children=2, shape=(8, 8, 8))
             optimizer = torch.optim.Adam(model.parameters())
             model.child_denom.fill_(100.0)
-            model.child_grad_accum.fill_(100.0)
+            model.child_grad_accum.fill_(1000.0)  # mean gradient 10 > threshold x4 at the finest level
             with torch.no_grad():
                 model.anchor[:, :3] = 0.0
                 model.anchor[:, 3] = 0.5
