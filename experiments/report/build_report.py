@@ -206,8 +206,8 @@ parts.append('''<section class="method"><div class="mh"><span class="letter">A</
 <div class="lineage">不涉及时变表征,衡量"每帧独立重建能到多好";也是 40 dB 目标的参照系(逐帧 ESVR 每帧约 2.4 万个有效基元)</div>
 <div class="tablewrap"><table><thead><tr><th>结果</th><th>配置 / 路径</th><th>规模 / 耗时</th><th>高斯数</th><th>可视化</th><th>状态</th><th class="num">平均 PSNR</th></tr></thead><tbody>''')
 PF = lambda per, total, lo, hi, note: f'<b>{per:,}</b> / 帧(均值)<br>90 帧共 {total:,}<br><span class="sub">单帧 {lo:,} – {hi:,}</span><br><span class="sub">{note}</span>'
-parts.append(row("零模型基线:复制上一帧", "不训练任何模型,用第 t−1 帧预测第 t 帧(帧 1→2 的 PSNR);用第 1 帧预测第 90 帧为 13.77 dB。任何低于此的动态模型都不如“什么都不建模”", "(数据本身)",
-    "0 s<br>0 MB", "none", pill("ref", "零模型"), "30.39 dB", counts="—", kernel="na"))
+parts.append(row("零模型基线:复制上一帧", "不训练任何模型,用第 t−1 帧预测第 t 帧,89 对逐帧 PSNR 的均值(单对 24.3 – 30.4;帧 1→2 这一对是 30.39,2026-09-22 之前页面误把它当成了均值);用第 1 帧预测第 90 帧为 13.77 dB;90 帧均值体积对各帧只有 18.33 dB(时间不变成分仅占能量 13.5%)。任何低于此的动态模型都不如“什么都不建模”", "(数据本身)",
+    "0 s<br>0 MB", "none", pill("ref", "零模型"), "28.80 dB", "24.3 – 30.4", counts="—", kernel="na"))
 parts.append(row("单帧 vorts0001 基线", "原生 <code>train_chunk.py</code> 配方,22,400 迭代,增密+剪枝,未修复核", "output/experiments/vorts0001_baseline/",
     "<b>36.8 s</b><br>0.92 MB", "experiments__vorts0001_baseline", pill("ref"), "41.77 dB", counts='<b>21,401</b> 个高斯<br><span class="sub">20,000 初始 → 增密 → 剪枝后</span>', kernel="unfixed-by-design"))
 parts.append(row("90 帧逐帧原生 ESVR", "与上行相同配方,90 帧各训一套,未修复核", "ESVR/output/esvr_original_per_frame/",
@@ -397,7 +397,7 @@ for(const g of [25,30,35,40,45,50]){{s+=`<line x1="${{L}}" x2="${{W-R}}" y1="${{
 for(const g of [1,2,5,10,20,50,100,200,500]){{s+=`<line y1="${{T}}" y2="${{H-Bm}}" x1="${{X(g)}}" x2="${{X(g)}}" stroke="var(--line)" stroke-dasharray="2 4"/><text x="${{X(g)}}" y="${{H-Bm+16}}" text-anchor="middle">${{g}}</text>`;}}
 s+=`<text x="${{(L+W-R)/2}}" y="${{H-6}}" text-anchor="middle">模型大小 (MB, log)</text>`;
 s+=`<line x1="${{L}}" x2="${{W-R}}" y1="${{Y(50)}}" y2="${{Y(50)}}" stroke="var(--accent)" stroke-dasharray="6 4" opacity=".7"/><text x="${{W-R-4}}" y="${{Y(50)-5}}" text-anchor="end" style="fill:var(--accent)">目标 50 dB</text>`;
-s+=`<line x1="${{L}}" x2="${{W-R}}" y1="${{Y(30.39)}}" y2="${{Y(30.39)}}" stroke="var(--ink3)" stroke-dasharray="2 4"/><text x="${{L+6}}" y="${{Y(30.39)-5}}" style="fill:var(--ink3)">零模型:复制上一帧 30.39 dB</text>`;
+s+=`<line x1="${{L}}" x2="${{W-R}}" y1="${{Y(28.80)}}" y2="${{Y(28.80)}}" stroke="var(--ink3)" stroke-dasharray="2 4"/><text x="${{L+6}}" y="${{Y(28.80)-5}}" style="fill:var(--ink3)">零模型:复制上一帧,89 对均值 28.80 dB(2026-09-22 修正;此前标的 30.39 只是第 1→2 帧一对)</text>`;
 for(const p of P){{const r=(p.s==="s4d_fix"||p.s==="s4d_compact")?7:(p.s==="static"?6:5);const op=p.f||p.s==="s4d_old"?.35:1;const st=(p.s==="s4d_fix"||p.s==="s4d_compact")?`stroke="var(--ink)" stroke-width="1.5"`:"";
 s+=`<circle class="pt" cx="${{X(p.x)}}" cy="${{Y(p.y)}}" r="${{r}}" fill="${{C[p.s]}}" opacity="${{op}}" ${{st}} data-l="${{p.l}} · ${{p.x}} MB · ${{p.y.toFixed(2)}} dB"/>`;}}
 s+=`</svg><div class="tip" id="tip"></div>`;
