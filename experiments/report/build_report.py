@@ -21,7 +21,8 @@ def count_cell(key):
     return (f'<b>{s["anchors"]:,}</b> 锚点 × {s["children"]}<br>= {s["total"]:,} 高斯'
             f'<br><span class="sub">活跃/查询 {s["active"]:,}</span><br><span class="sub">有用/查询 t=0.5 {s["useful_query"]:,}</span>{mean}'
             f'<br><span class="sub">有用总数 {s["useful_total"]:,} ({s["useful_total"] / s["total"]:.0%})</span>'
-            + (f'<br><span class="sub">{nf} 帧从未选入 {s["never_selected"]:,} ({s["never_selected"] / s["total"]:.0%}),其中“有用” {s["useful_never_selected"]:,}</span>' if "never_selected" in s else ""))
+            + (f'<br><span class="sub">{nf} 帧从未选入 {s["never_selected"]:,} ({s["never_selected"] / s["total"]:.0%}),其中“有用” {s["useful_never_selected"]:,}</span>'
+               f'<br><span class="sub"><b>任一时刻起作用 {s["useful_total"] - s["useful_never_selected"]:,} ({(s["useful_total"] - s["useful_never_selected"]) / s["total"]:.0%})</b>;全程无用 {s["total"] - s["useful_total"] + s["useful_never_selected"]:,} ({(s["total"] - s["useful_total"] + s["useful_never_selected"]) / s["total"]:.0%})</span>' if "never_selected" in s else ""))
 thumbs = {os.path.basename(p) for p in glob.glob(os.path.join(IMG, "*.jpg"))}
 
 def viz(key):
@@ -266,7 +267,7 @@ parts.append('''<section class="method"><div class="mh"><span class="letter">D</
 <dt>锚点生长</dt><dd>上游算法移植:统计 ‖∂L/∂xyz‖·opacity_t·σ^γ(γ=1,ESVR 的 3D 中心梯度替代 2D 屏幕梯度),窗口 1,500–60,000 每 100 步,三级 4D 格子 16/4/1 体素 × 1 帧,只在空格子中心新建,特征 max-pool;阈值按实测梯度 p90 校准(修复核 1.2e-3;未修复核时 4e-7)</dd>
 <dt>ESVR 适配项</dt><dd>子椭球尺度下限 0.5 体素;opacity 头 sigmoid(上游 tanh+掩码会在零特征初始化下全部死亡);时间截断 1e-3;σ/offset 数值钳位;锚点数上限(上游无)</dd>
 <dt>初始化</dt><dd>6,000 锚点均匀随机(空间 + 时间),尺度取最近邻距离;子椭球初始幅值 sigmoid(0)=0.5;速度上限 tanh 原生 1</dd>
-<dt>锚点 / 高斯列</dt><dd><b>锚点</b> = 训练结束时的锚点数;<b>高斯</b> = 锚点 × K,即模型能生成的子椭球总数(每个锚点固定生成 K 个,多余的靠压小/压暗关闭);<b>活跃/查询</b> = 训练末段每步渲染时通过时间门(opacity &gt; 1e-3)被送入 CUDA 的子椭球数;<b>有用/查询 t=0.5</b> = 其中强度 &gt; 1/255 且尺度未贴在 0.5 体素下限的,在序列中点 t = 0.5 这一个时刻切片统计;<b>有用/查询 90 帧均值</b> = 同一条件在全部 90 个训练时刻各切一次后的均值(括号内为最小–最大);<b>有用总数</b> = 全体子椭球中满足同一条件的数量及占比(与时间无关);<b>90 帧从未选入</b> = 在全部 90 个训练时刻都没有通过时间门(home 时刻漂出 [0,1] 或时间窗落在两帧之间)的子椭球,它们对这 90 帧的重建零贡献、可精确删除;“其中有用”是这些里按强度/尺度本来算“有用”的数量——修复核的运行里只有 ~1%,说明“有用总数”几乎没有被时间上死掉的高斯抬高。对照:静态单帧 ESVR(修复核、正确配方)21k 基元 / 22k 步 = 41.7 dB,16k 基元 / 67k 步 = 44.7 dB,139k 基元 / 67k 步 = 49.7 dB(A 节 S 系列)</dd>
+<dt>锚点 / 高斯列</dt><dd><b>锚点</b> = 训练结束时的锚点数;<b>高斯</b> = 锚点 × K,即模型能生成的子椭球总数(每个锚点固定生成 K 个,多余的靠压小/压暗关闭);<b>活跃/查询</b> = 训练末段每步渲染时通过时间门(opacity &gt; 1e-3)被送入 CUDA 的子椭球数;<b>有用/查询 t=0.5</b> = 其中强度 &gt; 1/255 且尺度未贴在 0.5 体素下限的,在序列中点 t = 0.5 这一个时刻切片统计;<b>有用/查询 90 帧均值</b> = 同一条件在全部 90 个训练时刻各切一次后的均值(括号内为最小–最大);<b>有用总数</b> = 全体子椭球中满足同一条件的数量及占比(与时间无关);<b>90 帧从未选入</b> = 在全部 90 个训练时刻都没有通过时间门(home 时刻漂出 [0,1] 或时间窗落在两帧之间)的子椭球,它们对这 90 帧的重建零贡献、可精确删除;“其中有用”是这些里按强度/尺度本来算“有用”的数量——修复核的 90 帧运行里只有 ~1%,说明“有用总数”几乎没有被时间上死掉的高斯抬高(例外是只训 10 帧的 K1:随机 t 初始化让 61% 的孩子落在没训过的时刻,其中 6.3 万“有用”);<b>任一时刻起作用</b> = 有用 且 至少在一个训练时刻被选入,即真正参与过重建的子椭球数及占比;<b>全程无用</b> = 其余全部(太暗 / 贴尺度下限 / 从未选入),这两个数相加等于“高斯”总数。“有用/查询”与“任一时刻起作用”之差反映跨时刻复用的程度。对照:静态单帧 ESVR(修复核、正确配方)21k 基元 / 22k 步 = 41.7 dB,16k 基元 / 67k 步 = 44.7 dB,139k 基元 / 67k 步 = 49.7 dB(A 节 S 系列)</dd>
 </dl></div>
 <h3 class="grp">D.1 早期版本(核状态未记录)</h3>''' + th)
 parts.append(s4d("配置对齐版", "vorts90_matched_comparison", "对齐 ESVR4D:40,000 步、6,000 锚点 × 5 子元、单一 lr 5e-3、feat_lr 5e-3、MLP lr 2e-3、增密关;clone/split 式增密代码", pill("old"), note="children/feat_lr 均非论文原生值"))
