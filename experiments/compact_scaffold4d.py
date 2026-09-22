@@ -4,11 +4,11 @@ left with no child, optionally store the rest in fp16, then re-evaluate so
 the size/PSNR trade is measured rather than assumed.
 
 Reads RUN_DIR/checkpoint.pt (never writes to it). Writes
-RUN_DIR/compact/{model_compact.pt, metrics.json, report.json}; the compact
+RUN_DIR/<out-dir>/{model_compact.pt, metrics.json, report.json} (default compact/); the compact
 file is self-contained (manifest + training args) and is accepted by
 inference_scaffold4d.py --checkpoint.
 
-Usage: compact_scaffold4d.py RUN_DIR --manifest M [--fp16] [--drop-floor]
+Usage: compact_scaffold4d.py RUN_DIR --manifest M [--fp16] [--drop-floor] [--drop-never-selected]
 """
 import argparse
 import json
@@ -49,9 +49,13 @@ def main():
     p.add_argument("--drop-floor", action="store_true",
                    help="Also drop children pinned on the scale floor (they can still touch a voxel centre, so this is not exact)")
     p.add_argument("--dark", type=float, default=1 / 255, help="Intensity below which the kernel never draws a child")
+    p.add_argument("--drop-never-selected", action="store_true",
+                   help="Also drop children whose temporal gate never passes the cutoff at any manifest time point (exact for those time points; "
+                        "matters for frame-subset runs, where random-t anchors park capacity at untrained times)")
+    p.add_argument("--out-dir", default="compact", help="Subdirectory of RUN_DIR to write to (use another name to keep an earlier compaction)")
     args = p.parse_args()
     run = Path(args.run)
-    out = run / "compact"
+    out = run / args.out_dir
     out.mkdir(exist_ok=True)
     sequence = VolumeSequence(args.manifest)
     ck = torch.load(run / "checkpoint.pt", map_location="cuda", weights_only=False)
@@ -69,6 +73,13 @@ def main():
         keep = g.intensity[..., 0] >= args.dark
         if args.drop_floor:
             keep &= g.scale.amax(-1) > cfg["scale_floor"] * 1.2
+        never_selected = None
+        if args.drop_never_selected:
+            ever = torch.zeros(keep.numel(), dtype=torch.bool, device=keep.device)
+            for t in sequence.times:
+                ever[model.at(t, g).child_index] = True
+            never_selected = int((keep.reshape(-1) & ~ever).sum())
+            keep &= ever.reshape(keep.shape)
     compact = build_compact(model, keep, fp16=args.fp16)
     save_compact(compact, out / "model_compact.pt", ck["manifest"], ck["args"], fp16=args.fp16)
     # Evaluate what was written, not the in-memory object.
@@ -78,6 +89,7 @@ def main():
     stored = stored_bytes(compact, args.fp16)
     report = dict(run=str(run), anchors_before=cfg["anchors"], children_before=cfg["anchors"] * cfg["children"],
                   anchors_kept=compact.config["anchors"], children_kept=int(keep.sum()), fp16=args.fp16, drop_floor=args.drop_floor,
+                  drop_never_selected=args.drop_never_selected, dropped_never_selected=never_selected,
                   bytes_before=before, bytes_after=stored, mb_before=round(before / 1e6, 2), mb_after=round(stored / 1e6, 2),
                   ratio=round(before / stored, 2), file_mb=round((out / "model_compact.pt").stat().st_size / 1e6, 2),
                   psnr_before=round(float(np.mean([r["psnr_db"] for r in original])), 3),
