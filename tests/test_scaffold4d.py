@@ -98,6 +98,55 @@ class Mathematics(unittest.TestCase):
         self.assertEqual(len(model.child_seen), 4)
         self.assertEqual(model.adjust_anchors(optimizer, grad_threshold=1e9, max_anchors=3, prune_dead=False)["pruned"], 0)
 
+    def test_upstream_level_skip(self):
+        def voting_model():
+            # Every child votes, and sits one fine cell (0.02) from its anchor:
+            # the coarse (0.32) and middle (0.08) cells are already occupied by
+            # the anchor itself, only the fine level has free cells.
+            model = ScaffoldESVR(anchors=3, children=2, shape=(8, 8, 8))
+            optimizer = torch.optim.Adam(model.parameters())
+            model.child_denom.fill_(100.0)
+            model.child_grad_accum.fill_(100.0)
+            with torch.no_grad():
+                model.anchor[:, :3] = 0.0
+                model.anchor[:, 3] = 0.5
+                model.log_offset_scale[:, :3] = torch.log(torch.tensor(0.02))
+                model.offset[..., :3] = torch.tensor([[1.0, 0, 0], [0, 1.0, 0]])
+                model.offset[..., 3] = 0.0
+            return model, optimizer
+        kwargs = dict(grad_threshold=0.5, max_anchors=50, voxel_size=0.02, t_size=0.1, init_factor=16, hierarchy_factor=4, depth=3, partial=False)
+        model, optimizer = voting_model()
+        self.assertGreater(model.adjust_anchors(optimizer, **kwargs)["grown"], 0)
+        model, optimizer = voting_model()
+        # Upstream: the coarse level adds nothing, so the finer levels are skipped.
+        self.assertEqual(model.adjust_anchors(optimizer, upstream_level_skip=True, **kwargs)["grown"], 0)
+
+    def test_compact_roundtrip(self):
+        import tempfile
+        from scaffold4d.compact import build_compact, load_compact, save_compact
+        model = ScaffoldESVR(anchors=5, children=3, shape=(8, 8, 8), temporal_cutoff=0.0)
+        with torch.no_grad():
+            model.anchor_feat.normal_()
+            model.offset.normal_()
+        keep = torch.tensor([[False, False, False],   # anchor 0 dropped entirely
+                             [True, False, False],
+                             [True, True, True],
+                             [False, True, False],
+                             [True, False, True]])
+        compact = build_compact(model, keep)
+        self.assertEqual(compact.config["anchors"], 4)
+        with tempfile.TemporaryDirectory() as d:
+            save_compact(compact, f"{d}/c.pt", manifest={"frames": []}, source_args={"steps": 1})
+            payload = torch.load(f"{d}/c.pt", weights_only=False)
+            loaded = load_compact(payload, device="cpu")
+        full = model.at(0.3)
+        kept_flat = keep.reshape(-1)[full.child_index]
+        for m in (compact, loaded):
+            s = m.at(0.3)
+            torch.testing.assert_close(s.get_xyz, full.get_xyz[kept_flat])
+            torch.testing.assert_close(s.get_opacity, full.get_opacity[kept_flat])
+            torch.testing.assert_close(s.get_scaling, full.get_scaling[kept_flat])
+
     def test_data_init_and_bounds(self):
         model = ScaffoldESVR(anchors=8, children=2, shape=(8, 8, 8), flow_scale=8.0, scale_floor=0.05, opacity_init=0.1,
                              anchor_init=torch.rand(8, 4) * 2 - 1)

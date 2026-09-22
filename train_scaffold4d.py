@@ -159,8 +159,10 @@ def main():
     p.add_argument("--grow-hierarchy-factor", type=int, default=4, help="Native update_hierachy_factor")
     p.add_argument("--grow-depth", type=int, default=3, help="Native update_depth")
     p.add_argument("--grow-all-candidates", action="store_true", help="Native disable_partial_densify")
-    p.add_argument("--final-lr-scale", type=float, default=0.01,
-                   help="Log-linear decay of the natively constant groups (scale, feature, shape/flow MLP) to lr*scale at --steps; 1 = native (no decay, +-0.7 dB late oscillation, -5 dB at 150k anchors -- output/scaffold4d/decay/RESULTS.md)")
+    p.add_argument("--grow-upstream-level-skip", action="store_true",
+                   help="Upstream anchor_growing quirk: run finer grid levels only if a coarser level grew anchors this round")
+    p.add_argument("--final-lr-scale", type=float, default=1.0,
+                   help="Log-linear decay of the natively constant groups (scale, feature, shape/flow MLP) to lr*scale at --steps. 1 = native (no decay). The ESVR adaptation recipe uses 0.01 (+5 dB at 150k anchors, output/scaffold4d/decay/RESULTS.md); kept off by default so argparse defaults stay the paper's")
     p.add_argument("--adam-eps", type=float, default=1e-15, help="Native Adam eps")
     p.add_argument("--clip-grad", type=float, default=0.0, help="Global grad-norm clip; 0 disables (native: none)")
     p.add_argument("--seed", type=int, default=42)
@@ -324,7 +326,7 @@ def main():
                     min_opacity=args.min_opacity, voxel_size=grow_voxel_size, t_size=grow_t_size,
                     init_factor=args.grow_init_factor, hierarchy_factor=args.grow_hierarchy_factor,
                     depth=args.grow_depth, max_anchors=args.max_anchors, partial=not args.grow_all_candidates,
-                    prune_dead=args.prune_dead)
+                    prune_dead=args.prune_dead, upstream_level_skip=args.grow_upstream_level_skip)
                 print("DENSIFY " + json.dumps(dict(step=step, **event)), flush=True)
                 with (output / "densify.jsonl").open("a") as densify_log:
                     densify_log.write(json.dumps(dict(step=step, **event)) + "\n")

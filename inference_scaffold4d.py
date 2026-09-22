@@ -1,4 +1,6 @@
-"""Reconstruct an arbitrary time from a trusted local ScaffoldESVR checkpoint."""
+"""Reconstruct an arbitrary time from a trusted local ScaffoldESVR checkpoint
+(training checkpoint.pt or a compact/model_compact.pt written by
+experiments/compact_scaffold4d.py)."""
 import argparse
 import json
 from pathlib import Path
@@ -7,6 +9,7 @@ import numpy as np
 import torch
 from PIL import Image
 
+from scaffold4d.compact import is_compact, load_compact
 from scaffold4d.model import ScaffoldESVR, query_block
 
 
@@ -31,8 +34,11 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     if any(output.iterdir()):
         parser.error("Choose an empty output directory")
-    model = ScaffoldESVR(**saved["model_config"]).cuda()
-    model.load_state_dict(saved["model"])
+    if is_compact(saved):
+        model = load_compact(saved)
+    else:
+        model = ScaffoldESVR(**saved["model_config"]).cuda()
+        model.load_state_dict(saved["model"], strict=False)
     shape = model.config["shape"]
     volume = np.empty(shape, dtype=np.float32)
     for x in range(0, shape[0], args.block):

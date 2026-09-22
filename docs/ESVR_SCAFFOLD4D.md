@@ -52,10 +52,10 @@ vary with time in the official method at all.
 |---|---|---|
 | `scene/gaussian_model.py: create_from_pcd` | Anchor position is 4D: `anchor[:, :3]` = space, `anchor[:, 3]` = the anchor's own reference time (from the point cloud's per-point timestamps, or `U(0, max_init_t)` if none given) | Same: `anchor` is `(N, 4)`, xyz + t |
 | `scene/gaussian_model.py.__init__` (MLP definitions) | `mlp_opacity`: feat→K·1, Tanh, masked `>0`; `mlp_cov`: feat→K·8 (3 scale-gate + 1 temporal σ-pre-ELU + 4 quaternion); `mlp_color`: feat+viewdir+dist+appearance→K·3, Sigmoid; `mlp_flow`: feat→K·3, Tanh (velocity) | `mlp_opacity` and `mlp_cov` kept (renamed `heads.opacity`, `heads.shape`); `mlp_flow` kept (`heads.flow`); **`mlp_color` and the view-adaptive feature-bank MLP dropped** — ESVR has no camera, no view direction, no RGB/SH, matching the "no RGB/view-dependent" decision already made on the other two branches; **opacity head's `Tanh` replaced with sigmoid** — this specific deviation was not a stylistic choice but a fix for a real training collapse, see below |
-| `gaussian_renderer/__init__.py: generate_neural_gaussians` | Exact formulas (this is the part that matters most, verified by direct reading, not the paper prose — see "Mathematical representation" below) | Reimplemented verbatim in `scaffold4d/model.py`; one legitimate simplification: the anchor's own 8-column log-scale had a column (index 7) never read anywhere in the generation function — dropped to a clean 7 columns (3 spatial-offset-scale + 1 temporal-offset-scale + 3 final-ellipsoid-scale) |
+| `gaussian_renderer/__init__.py: generate_neural_gaussians` | Exact formulas (this is the part that matters most, verified by direct reading, not the paper prose — see "Mathematical representation" below) | Reimplemented following the upstream formulas in `scaffold4d/model.py` (see the audit table below for every deviation); one legitimate simplification: the anchor's own 8-column log-scale had a column (index 7) never read anywhere in the generation function — dropped to a clean 7 columns (3 spatial-offset-scale + 1 temporal-offset-scale + 3 final-ellipsoid-scale) |
 | `scene/gaussian_model.py: self._rotation`, `self._opacity` (per-anchor, `requires_grad_(False)`) | Created but **never read** in `generate_neural_gaussians` — appear to be vestigial fields inherited from the static-3DGS codebase this was built on | Omitted entirely; not used by upstream's own forward pass either |
 | `scripts/train_n3dv.sh` (the paper's actual reported configuration) | Enables `--temporal_opacity ours --use_flow --sigma_denom_weight`; `arguments/__init__.py`'s bare defaults (`temporal_opacity='4dgs'`, `use_flow=False`, `sigma_denom_weight=False`) are a weaker ablation, not what the paper reports | Implemented **only** the flags actually used for the paper's reported numbers: velocity-based motion, the generalized/super-Gaussian temporal opacity gate, sigma-weighted dynamic-aware growing statistics |
-| `scene/gaussian_model.py: training_statis`, `anchor_growing`, `adjust_anchor` | Hierarchical multi-depth (`update_depth`, default 3) voxel-grid growing with feature max-pooling into new cells, gradient statistic reweighted by `opacity_t · (σ·λ)^γ + weight_base` when "dynamic-aware" is active; anchors pruned when their accumulated base opacity stays below `min_opacity` | **Ported as implemented** (`ScaffoldESVR.record_statistics` / `adjust_anchors`, 2026-09-20) with one substitution: the view-space 2D gradient becomes the 3D gradient of each child's centre. An earlier version reused ESVR4D's clone/split machinery instead; that was replaced after it was found to drive the training-time capacity collapse documented in `output/scaffold4d/ablation/RESULTS.md` — see "Densification" below |
+| `scene/gaussian_model.py: training_statis`, `anchor_growing`, `adjust_anchor` | Hierarchical multi-depth (`update_depth`, default 3) voxel-grid growing with feature max-pooling into new cells, gradient statistic reweighted by `opacity_t · (σ·λ)^γ + weight_base` when "dynamic-aware" is active; anchors pruned when their accumulated base opacity stays below `min_opacity` | **Ported** (`ScaffoldESVR.record_statistics` / `adjust_anchors`, 2026-09-20; deviations listed in the audit section below) with one substitution: the view-space 2D gradient becomes the 3D gradient of each child's centre. An earlier version reused ESVR4D's clone/split machinery instead; that was replaced after it was found to drive the training-time capacity collapse documented in `output/scaffold4d/ablation/RESULTS.md` — see "Densification" below |
 | `train.py`: loss composition | `(1−λ_ssim)·L1 + λ_ssim·(1−SSIM) + 0.01·mean(scale.prod(dim=-1))` (a volume regularizer, encourages small ellipsoids), `λ_ssim=0.2` | Same three terms, reusing ESVR's existing L1/SSIM routine on 3D blocks exactly as the other two branches do |
 | `gaussian_renderer/__init__.py: render` (2D rasterizer, alpha-compositing, SH evaluation) | Not used | ESVR's existing scalar voxelizer (`gaussian_renderer.query`) is used instead, exactly as in the other two branches — **still no camera, no 2D rendering, no novel-view-synthesis evaluation anywhere in this branch**; supervision remains direct 3D-voxel L1/SSIM against the ground-truth volumes, the same property confirmed and discussed at length for the other two branches |
 
@@ -236,6 +236,30 @@ intensities 0.02–0.14, 41.2 dB, 1.0 MB/frame.
    pruning on *useful children per anchor* would free that budget.
 5. Anchors outside the volume: 1.4–2.5 % (grid cells straddling the
    boundary); harmless.
+
+## What this branch is, stated precisely (audit 2026-09-22)
+
+An ESVR scalar-volume **adaptation** of 4D-Scaffold-GS: the primitive, the
+voxelizer and the supervision are ESVR's; the anchor/feature/child
+structure, the linear motion, the generalized-Gaussian temporal gate, the
+optimizer groups and the dynamic-aware anchor growing follow the upstream
+code. It is not a line-for-line port. Every deviation, with its reason and
+what was measured:
+
+| Deviation from upstream | Reason | Measured |
+|---|---|---|
+| opacity head sigmoid instead of tanh + `>0` mask | tanh + zero-initialised features drove every child below zero within ~50 steps; sigmoid has no dead zone | required to train at all |
+| upstream `min_opacity` anchor pruning nearly inactive | the sum of K sigmoid intensities rarely drops below 0.005 per visit; upstream's tanh yields exact zeros | 1–70 anchors pruned per run; `--prune-dead` (ESVR prune_zeros / dark rules) recycles them but does not change PSNR (`screen_fixed/RESULTS.md`) |
+| 3D centre gradient replaces the 2D view-space gradient in the growing statistic | no camera; this is ESVR's own densification quantity | threshold recalibrated to the 3D gradient's p90 |
+| "observed enough" interval scaled by the block's share of the volume | a child is only observed when its 64³ block is sampled | — |
+| anchor cap with vote-ranked admission | upstream has no cap | 40k → 100k → 150k → 300k measured |
+| finer grid levels always run (`--grow-upstream-level-skip` restores upstream's skip) | upstream runs finer levels only when a coarser level grew this round; not noticed until the 09-22 audit | not measured |
+| anchor time initialised uniformly in [0,1] (upstream: all at t₀) | volumes have no SfM frame | `--init data` (GT-sampled 4D anchors) vs random: 0.0 dB |
+| 0.5-voxel floor on child scale; σ ∈ [1e-2, 1e2]; offset ∈ [−10, 10] | float32/CUDA failure modes (NaN, zero-gradient sub-voxel children) | floor: −3.3 dB without it |
+| temporal inclusion cutoff 1e-3 | efficiency; below the kernel's 1/255 | — |
+| global volume regularizer on all time-active children (upstream: on rendered children) | mini-batch data term + global regularizer | visibility-gated variant 0.0 dB; removing it −0.6 dB |
+| `--final-lr-scale 0.01` (ESVR recipe, **not the default**) | four upstream-constant LR groups oscillate ±0.7 dB late in training under block supervision | +5 dB at 150k anchors; default stays 1.0 so argparse defaults remain the paper's |
+| per-frame optimisation budget ≈ 1/12 of static ESVR's | 90 frames share one run | static ceiling study, `output/experiments/static_ceiling/RESULTS.md` |
 
 ## Data contract
 

@@ -243,7 +243,7 @@ class ScaffoldESVR(nn.Module):
     def adjust_anchors(self, optimizer, check_interval=100, success_threshold=0.8, grad_threshold=2e-4,
                        min_opacity=0.005, voxel_size=2 / 128, t_size=1 / 89, init_factor=16,
                        hierarchy_factor=4, depth=3, max_anchors=40000, partial=True, prune_dead=False,
-                       dark=1 / 255):
+                       dark=1 / 255, upstream_level_skip=False):
         """Upstream adjust_anchor: multi-level voxel-grid anchor growing from
         sufficiently observed, high-gradient children, then pruning of anchors
         whose children stayed near-transparent. With prune_dead, ESVR's
@@ -275,6 +275,12 @@ class ScaffoldESVR(nn.Module):
         added = 0
         budget = max(0, max_anchors - (n - int(prune.sum())))
         for level in range(depth):
+            # Upstream anchor_growing runs a finer level only if a coarser
+            # level already added anchors in this call (`length_inc == 0 and
+            # i > 0: continue`). Off by default: every run so far grew at all
+            # levels, and the effect has not been measured.
+            if upstream_level_skip and level > 0 and added == 0:
+                continue
             threshold = grad_threshold * (hierarchy_factor // 2) ** level
             candidate = (grads >= threshold) & observed
             if partial:
