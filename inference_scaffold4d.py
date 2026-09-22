@@ -38,7 +38,9 @@ def main():
         model = load_compact(saved)
     else:
         model = ScaffoldESVR(**saved["model_config"]).cuda()
-        model.load_state_dict(saved["model"], strict=False)
+        missing = model.load_state_dict(saved["model"], strict=False).missing_keys
+        if missing:
+            parser.error(f"Checkpoint lacks parameters: {missing[:5]}")
     shape = model.config["shape"]
     volume = np.empty(shape, dtype=np.float32)
     for x in range(0, shape[0], args.block):

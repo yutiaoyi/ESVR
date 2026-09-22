@@ -185,6 +185,8 @@ def main():
             or not 0 < args.success_threshold <= 1 or args.grow_depth < 1 or args.grow_init_factor < 1
             or args.grow_hierarchy_factor < 2 or args.max_anchors < 1):
         p.error("Invalid adaptation/growing option")
+    if args.grow_init_factor // args.grow_hierarchy_factor ** (args.grow_depth - 1) < 1:
+        p.error("grow-init-factor // grow-hierarchy-factor^(grow-depth-1) must be >= 1, otherwise the finest grid cell has size 0")
     if args.eval_only and not args.resume:
         p.error("--eval-only requires --resume")
     sequence = VolumeSequence(args.manifest)
@@ -208,18 +210,21 @@ def main():
         if saved["manifest"] != sequence.config:
             p.error("Checkpoint manifest differs from supplied sequence")
         # Growing statistics are non-persistent buffers; older checkpoints
-        # carried a different set of (also transient) statistics.
-        model.load_state_dict(saved["model"], strict=False)
+        # carried a different set of (also transient) statistics, so unexpected
+        # keys are tolerated -- missing parameters are not.
+        missing = model.load_state_dict(saved["model"], strict=False).missing_keys
+        if missing:
+            p.error(f"Checkpoint lacks parameters: {missing[:5]}")
     else:
-        anchor_init = None
+        anchor_init = anchor_scale = None
         if args.init == "data":
-            anchor_init = anchors_from_sequence(sequence, args.anchors, grow_voxel_size, grow_t_size,
-                                                generator=torch.Generator().manual_seed(args.seed))
+            anchor_init, anchor_scale = anchors_from_sequence(sequence, args.anchors, grow_voxel_size, grow_t_size,
+                                                              generator=torch.Generator().manual_seed(args.seed))
         model = ScaffoldESVR(anchors=args.anchors, children=args.children, shape=sequence.shape,
                              feat_dim=args.feat_dim, hidden=args.hidden, temporal_beta=args.temporal_beta,
                              temporal_cutoff=args.temporal_cutoff, flow_scale=args.flow_scale,
                              scale_floor=args.scale_floor_voxels * voxel, opacity_init=args.opacity_init,
-                             anchor_init=anchor_init, sigma_max=args.sigma_max, offset_spread=args.offset_spread,
+                             anchor_init=anchor_init, anchor_scale=anchor_scale, sigma_max=args.sigma_max, offset_spread=args.offset_spread,
                              child_scale_init=None if args.child_scale_init_voxels is None else args.child_scale_init_voxels * voxel).cuda()
     if saved:
         if args.eval_only:
@@ -227,8 +232,8 @@ def main():
             return
         ignored = {"resume", "output", "eval_only"}
         for name, value in saved["args"].items():
-            if name not in ignored and getattr(args, name) != value:
-                p.error(f"Resume option differs: {name}")
+            if name not in ignored and getattr(args, name, None) != value:
+                p.error(f"Resume option differs or is unknown to this script: {name}")
 
     def build_optimizer():
         # Seven native optimizer groups (scene/gaussian_model.py:

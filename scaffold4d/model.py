@@ -35,6 +35,19 @@ def voxel_centers(shape, index):
 
 
 @torch.no_grad()
+def nearest_neighbour_distance(points, chunk=4096):
+    """Per-point distance to its nearest other point, chunked (no N x N matrix)."""
+    points = points.float()
+    out = torch.empty(len(points))
+    for s in range(0, len(points), chunk):
+        d = torch.cdist(points[s:s + chunk], points)
+        rows = torch.arange(d.shape[0])
+        d[rows, rows + s] = float("inf")
+        out[s:s + chunk] = d.min(1).values
+    return out
+
+
+@torch.no_grad()
 def anchors_from_sequence(sequence, count, voxel_size, t_size, generator=None):
     """Upstream initialises anchors from an SfM point cloud voxelised on a 4D
     grid (create_from_pcd/voxelize_sample). Volumes have no point cloud, but
@@ -59,14 +72,18 @@ def anchors_from_sequence(sequence, count, voxel_size, t_size, generator=None):
     points = torch.cat(points, 0)
     grid = torch.cat([torch.round(points[:, :3] / voxel_size), torch.round(points[:, 3:] / t_size)], -1)
     grid = torch.unique(grid, dim=0)
-    return torch.cat([grid[:, :3] * voxel_size, grid[:, 3:] * t_size], -1).float()
+    anchors = torch.cat([grid[:, :3] * voxel_size, grid[:, 3:] * t_size], -1).float()
+    # Nearest neighbour in 4D with one frame scaled to one voxel, so anchors
+    # sharing a voxel in different frames are not treated as coincident.
+    scaled = torch.cat([anchors[:, :3], anchors[:, 3:] * (voxel_size / t_size)], -1)
+    return anchors, nearest_neighbour_distance(scaled)
 
 
 class ScaffoldESVR(nn.Module):
     def __init__(self, anchors=5000, children=5, shape=(128, 128, 128), feat_dim=32,
                  hidden=32, temporal_beta=4.0, temporal_cutoff=1e-3, flow_scale=1.0,
                  scale_floor=1e-4, opacity_init=0.5, anchor_init=None, sigma_max=1e2,
-                 offset_spread=0.0, child_scale_init=None):
+                 offset_spread=0.0, child_scale_init=None, anchor_scale=None):
         super().__init__()
         if anchors < 1 or children < 1 or len(shape) != 3 or min(shape) < 1:
             raise ValueError("Invalid anchor/children count or XYZ shape")
@@ -88,10 +105,10 @@ class ScaffoldESVR(nn.Module):
             anchor_init = torch.cat([(torch.rand(anchors, 3) * 2 - 1) * extent, torch.rand(anchors, 1)], -1)
             spatial = torch.full((anchors,), (float((2 * extent).prod()) / anchors) ** (1 / 3) * 0.5)
         else:
-            # Upstream: offset/final scale start at each anchor's nearest-neighbour distance.
-            d = torch.cdist(anchor_init[:, :3], anchor_init[:, :3])
-            d.fill_diagonal_(float("inf"))
-            spatial = d.min(1).values.clamp(1e-3, 1.0)
+            # Upstream: offset/final scale start at each anchor's nearest-neighbour
+            # distance (anchors_from_sequence supplies it measured in 4D).
+            spatial = (anchor_scale if anchor_scale is not None
+                       else nearest_neighbour_distance(anchor_init[:, :3])).clamp(1e-3, 1.0)
         self.anchor = nn.Parameter(anchor_init.clone().float())
         self.anchor_feat = nn.Parameter(torch.zeros(anchors, feat_dim))
         log_spatial = spatial.log()[:, None]

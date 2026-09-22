@@ -59,7 +59,9 @@ def main():
         p.error("Checkpoint manifest differs from supplied sequence")
     cfg = ck["model_config"]
     model = ScaffoldESVR(**cfg).cuda()
-    model.load_state_dict(ck["model"], strict=False)
+    missing = model.load_state_dict(ck["model"], strict=False).missing_keys
+    if missing:
+        p.error(f"Checkpoint lacks parameters: {missing[:5]}")
     before = sum(t.numel() * t.element_size() for t in model.state_dict().values())
 
     with torch.no_grad():

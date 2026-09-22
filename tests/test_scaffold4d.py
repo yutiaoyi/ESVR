@@ -17,10 +17,14 @@ class Mathematics(unittest.TestCase):
         # A child's own temporal gate is exactly 1 at its own home time...
         gate_home = torch.exp(-((home_t - home_t) * sigma0).abs().pow(model.config["temporal_beta"]))
         torch.testing.assert_close(gate_home, torch.tensor(1.0, dtype=torch.float64))
-        # ...and decays strictly as |query time - home time| grows.
+        # ...and decays strictly monotonically as |query time - home time| grows
+        # (checked on the gate values themselves, not on cutoff counts).
+        gates = [torch.exp(-((g.home_t - (g.home_t + dt)) * g.sigma).abs().pow(model.config["temporal_beta"])) for dt in (0.0, 0.05, 0.2, 0.6)]
+        for a, b in zip(gates, gates[1:]):
+            self.assertTrue(torch.all(b < a))
         near = model.at((home_t + 0.1).item(), generated=g)
         far = model.at((home_t + 5.0).item(), generated=g)
-        self.assertGreater(len(near.get_xyz), len(far.get_xyz))
+        self.assertLessEqual(len(far.get_xyz), len(near.get_xyz))
 
     def test_at_time_matches_manual_recomputation(self):
         model = ScaffoldESVR(anchors=3, children=2, shape=(8, 8, 8), temporal_cutoff=0.0).double()

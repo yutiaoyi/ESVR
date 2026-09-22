@@ -120,14 +120,15 @@ for extra capacity — the paper's stated motivation.
   frame interval, the paper's setting); a new anchor is placed at the centre
   of every cell not already holding an anchor, with feature = max-pool of
   the voting children's anchor features, zero offsets, `log_offset_scale`
-  = cell size; upstream's random 50%/25%/12.5% subsampling per level is
+  = cell size; upstream's random per-level subsampling (keep 50 % / 75 % / 87.5 % of candidates at levels 0/1/2) is
   kept (`--grow-all-candidates` disables it). Anchors whose accumulated base
   opacity is below `min_opacity` × visits are pruned. Adam moments are
   sliced/zero-padded exactly as before (`replace_population`).
 - Two ESVR-specific calibrations, both recorded in `config.json`: the
   gradient threshold (native 2e-4 is a 2D screen-space magnitude; the 3D
-  centre gradient of a per-voxel-mean loss has p90 ≈ 4e-7 here, so the
-  default is 4e-7), and the "observed often enough" interval, scaled by the
+  centre gradient of a per-voxel-mean loss has p90 ≈ 1.2e-3 here on the
+  fixed voxelizer, so the default is 1.2e-3 — the 4e-7 used on 2026-09-20
+  had been measured through the unfixed kernel), and the "observed often enough" interval, scaled by the
   block's share of the volume because a child is only observed on steps
   whose 64³ block contains it (upstream renders full frames).
 
@@ -164,7 +165,7 @@ listed as such with its justification.
 | Densification statistic | mean over observations of ‖∂L/∂(child centre)‖ weighted by `opacity_t·σ^γ` | mean over observations of ‖∂L/∂(3D centre)‖ (`add_densification_stats`, 3D not 2D) | mean of ‖∂L/∂(2D screen position)‖ weighted by `opacity_t·σ^γ` | **ESVR's quantity** (3D centre gradient — there is no screen space) inside **4D-Scaffold-GS's weighting** |
 | Where new capacity goes | new **anchors** at centres of unoccupied 4D grid cells (16/4/1 voxel levels), feature max-pooled from voting children | clone (small) / split (large) of the primitive itself | same as ours | 4D-Scaffold-GS |
 | Grid sizes | finest cell = 1 data voxel, temporal cell = 1 frame interval | — | `voxel_size` 0.001 scene units, `t_grid_size` = frame interval | 4D-Scaffold-GS (spatial value re-expressed in voxels) |
-| Growing threshold | 4e-7 | 2.5e-7 – 1e-8 (dataset-tuned, also a 3D-gradient threshold) | 2e-4 (2D pixels) | **calibrated** to the measured 3D-gradient distribution; same order as ESVR's own thresholds, which is a useful sanity check |
+| Growing threshold | 1.2e-3 (fixed voxelizer; 4e-7 was the unfixed-kernel value) | 2.5e-7 – 1e-8 (dataset-tuned for the unfixed kernel; ×4096 on the fixed one) | 2e-4 (2D pixels) | **calibrated** to the measured 3D-gradient distribution |
 | "Observed enough" gate before a child may vote | `denom > interval·0.8·0.5`, interval scaled by the block's share of the volume | — | `offset_denom > update_interval·success_threshold·0.5` | 4D-Scaffold-GS; block scaling is ours (a child is only observed when its block is sampled) |
 | Pruning | anchors whose children's summed base intensity stays `< min_opacity` (0.005) over a check window | intensity `< 1/255` (dark pruning), out of bbox, too large, global importance `|Ω|·I·FA` keep 66% | same as ours | 4D-Scaffold-GS (nearly inactive here, see audit findings) |
 | Opacity reset | none | every `opacity_reset_interval` (ESVR relies on it heavily: every 64 iterations in the vorts recipe) | none | neither — not expressible with a shared opacity MLP |
@@ -260,6 +261,7 @@ what was measured:
 | global volume regularizer on all time-active children (upstream: on rendered children) | mini-batch data term + global regularizer | visibility-gated variant 0.0 dB; removing it −0.6 dB |
 | `--final-lr-scale 0.01` (ESVR recipe, **not the default**) | four upstream-constant LR groups oscillate ±0.7 dB late in training under block supervision | +5 dB at 150k anchors; default stays 1.0 so argparse defaults remain the paper's |
 | per-frame optimisation budget ≈ 1/12 of static ESVR's | 90 frames share one run | static ceiling study, `output/experiments/static_ceiling/RESULTS.md` |
+| upstream's `_prune_anchor_optimizer` clamp of the log child-scale columns to ≤ 0.05 on every `adjust_anchor` call is not ported | our `stabilize()` caps `log_offset_scale` at log(10) and the child scale is floored/gated separately; upstream's cap is in scene units | not measured (found by the 09-22 independent review; almost certainly inert here) |
 
 ## Data contract
 

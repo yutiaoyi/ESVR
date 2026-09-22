@@ -91,7 +91,8 @@ def main():
     fig, axes = plt.subplots(1, 2, figsize=(12, 4))
     axes[0].plot([r["time"] for r in rows], psnr)
     axes[0].set(xlabel="Frame number (equally spaced)", ylabel="PSNR (dB)", title="All training frames; unclipped reconstruction")
-    monitored = [json.loads(line) for line in (run / "monitor.jsonl").read_text().splitlines()]
+    monitored = ([json.loads(line) for line in (run / "monitor.jsonl").read_text().splitlines()]
+                 if (run / "monitor.jsonl").exists() else [])
     for i in range(len(monitored[0]["frames"])):
         axes[1].plot([r["step"] for r in monitored], [r["frames"][i]["psnr_db"] for r in monitored],
                      label=f"Frame {monitored[0]['frames'][i]['time']}")
