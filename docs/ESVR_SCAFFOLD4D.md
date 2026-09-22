@@ -249,7 +249,7 @@ what was measured:
 
 | Deviation from upstream | Reason | Measured |
 |---|---|---|
-| opacity head sigmoid instead of tanh + `>0` mask | tanh + zero-initialised features drove every child below zero within ~50 steps; sigmoid has no dead zone | required to train at all |
+| opacity head sigmoid instead of tanh + `>0` mask (`--opacity-activation tanh` restores upstream's) | tanh + zero-initialised features drove every child below zero within ~50 steps on the 09-12 synthetic smoke test; sigmoid has no dead zone | Re-tested 2026-09-22 on real data, fixed kernel, decay recipe (`output/scaffold4d/smoke/tanh*`): children switched off 60k → 30k by step 1,000 and → 1.1k by step 2,000, with the native anchor pruning enabled (6,000 → 1,137 anchors) or disabled alike; monitored PSNR stuck at ~18 dB while sigmoid reaches 22 dB at the same step. Under additive accumulation the optimiser drives most children negative and tanh's hard mask then removes their gradient for good. |
 | upstream `min_opacity` anchor pruning nearly inactive | the sum of K sigmoid intensities rarely drops below 0.005 per visit; upstream's tanh yields exact zeros | 1–70 anchors pruned per run; `--prune-dead` (ESVR prune_zeros / dark rules) recycles them but does not change PSNR (`screen_fixed/RESULTS.md`) |
 | 3D centre gradient replaces the 2D view-space gradient in the growing statistic | no camera; this is ESVR's own densification quantity | threshold recalibrated to the 3D gradient's p90 |
 | "observed enough" interval scaled by the block's share of the volume | a child is only observed when its 64³ block is sampled | — |

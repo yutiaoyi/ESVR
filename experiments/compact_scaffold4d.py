@@ -66,7 +66,7 @@ def main():
 
     with torch.no_grad():
         g = model.generate()
-        keep = g.opacity_raw.sigmoid()[..., 0] >= args.dark
+        keep = g.intensity[..., 0] >= args.dark
         if args.drop_floor:
             keep &= g.scale.amax(-1) > cfg["scale_floor"] * 1.2
     compact = build_compact(model, keep, fp16=args.fp16)

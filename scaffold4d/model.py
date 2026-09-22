@@ -83,7 +83,7 @@ class ScaffoldESVR(nn.Module):
     def __init__(self, anchors=5000, children=5, shape=(128, 128, 128), feat_dim=32,
                  hidden=32, temporal_beta=4.0, temporal_cutoff=1e-3, flow_scale=1.0,
                  scale_floor=1e-4, opacity_init=0.5, anchor_init=None, sigma_max=1e2,
-                 offset_spread=0.0, child_scale_init=None, anchor_scale=None):
+                 offset_spread=0.0, child_scale_init=None, anchor_scale=None, opacity_activation="sigmoid"):
         super().__init__()
         if anchors < 1 or children < 1 or len(shape) != 3 or min(shape) < 1:
             raise ValueError("Invalid anchor/children count or XYZ shape")
@@ -93,13 +93,16 @@ class ScaffoldESVR(nn.Module):
             raise ValueError("Invalid flow_scale, scale_floor or opacity_init")
         if sigma_max <= 1e-2 or offset_spread < 0 or (child_scale_init is not None and child_scale_init <= 0):
             raise ValueError("Invalid sigma_max, offset_spread or child_scale_init")
+        if opacity_activation not in ("sigmoid", "tanh"):
+            raise ValueError("opacity_activation must be sigmoid or tanh")
         if anchor_init is not None:
             anchors = len(anchor_init)
         self.config = dict(anchors=anchors, children=children, shape=list(shape),
                            feat_dim=feat_dim, hidden=hidden, temporal_beta=temporal_beta,
                            temporal_cutoff=temporal_cutoff, flow_scale=flow_scale,
                            scale_floor=scale_floor, opacity_init=opacity_init, sigma_max=sigma_max,
-                           offset_spread=offset_spread, child_scale_init=child_scale_init)
+                           offset_spread=offset_spread, child_scale_init=child_scale_init,
+                           opacity_activation=opacity_activation)
         extent = torch.tensor(shape) / max(shape)
         if anchor_init is None:
             anchor_init = torch.cat([(torch.rand(anchors, 3) * 2 - 1) * extent, torch.rand(anchors, 1)], -1)
@@ -137,7 +140,11 @@ class ScaffoldESVR(nn.Module):
             # ESVR sums contributions instead of alpha-compositing, so the
             # initial per-child amplitude sets the initial over-prediction
             # directly; 0.1 is both ESVR's and upstream's own opacity init.
-            self.heads["opacity"][-1].bias.fill_(inverse_sigmoid(opacity_init))
+            # Upstream's head ends in tanh and children with output <= 0 are
+            # excluded from the query (a free "off" switch); sigmoid has no
+            # dead zone. Both start every child at intensity opacity_init.
+            self.heads["opacity"][-1].bias.fill_(
+                inverse_sigmoid(opacity_init) if opacity_activation == "sigmoid" else math.atanh(opacity_init))
         n = anchors * children
         self.register_buffer("child_grad_accum", torch.zeros(n), persistent=False)
         self.register_buffer("child_denom", torch.zeros(n), persistent=False)
@@ -180,7 +187,8 @@ class ScaffoldESVR(nn.Module):
         rotation = normalize_quaternion(shape_out[..., 4:8])
         # Numerical guardrail: sigma is raised to the 4th power downstream.
         sigma = (F.elu(shape_out[..., 3:4]) + 1).clamp(1e-2, self.config["sigma_max"])
-        return SimpleNamespace(opacity_raw=opacity_raw, home_xyz=home_xyz, home_t=home_t,
+        intensity = opacity_raw.sigmoid() if self.config.get("opacity_activation", "sigmoid") == "sigmoid" else opacity_raw.tanh()
+        return SimpleNamespace(opacity_raw=opacity_raw, intensity=intensity, home_xyz=home_xyz, home_t=home_t,
                                scale=scale, rotation=rotation, sigma=sigma, flow=flow)
 
     def at(self, timestamp, generated=None):
@@ -188,8 +196,10 @@ class ScaffoldESVR(nn.Module):
         timestamp = torch.as_tensor(timestamp, device=self.anchor.device, dtype=self.anchor.dtype)
         dt = g.home_t - timestamp
         opacity_t = torch.exp(-(dt * g.sigma).abs().pow(self.config["temporal_beta"]))
-        opacity_base = g.opacity_raw.sigmoid()
+        opacity_base = g.intensity
         opacity = opacity_base * opacity_t
+        # With tanh, a child whose base intensity is <= 0 has opacity <= 0 and
+        # fails the cutoff below: upstream's hard mask, with no extra code.
         xyz = g.home_xyz + g.flow * dt
         # Inclusion in this particular CUDA query is an efficiency cutoff,
         # not a permanent gate: sigmoid(opacity_raw) always has a nonzero
@@ -204,7 +214,7 @@ class ScaffoldESVR(nn.Module):
             get_xyz=selected_xyz, get_scaling=flat(g.scale), get_rotation=flat(g.rotation),
             get_opacity=flat(opacity), mask=mask, opacity_t=flat(opacity_t), sigma=flat(g.sigma),
             child_index=flat_mask.nonzero().flatten(),
-            anchor_opacity_sum=opacity_base.detach().sum((1, 2)))
+            anchor_opacity_sum=opacity_base.detach().clamp_min(0).sum((1, 2)))
 
     @torch.no_grad()
     def stabilize(self):
@@ -275,7 +285,7 @@ class ScaffoldESVR(nn.Module):
         g = self.generate()
         dead_count = 0
         if prune_dead:
-            intensity = g.opacity_raw.sigmoid()[..., 0]
+            intensity = g.intensity[..., 0]
             seen = self.child_seen.view(n, k)
             effective = self.child_effective.view(n, k)
             # A child is judged only once it has been seen enough times this

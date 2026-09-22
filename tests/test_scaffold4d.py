@@ -151,13 +151,25 @@ class Mathematics(unittest.TestCase):
             torch.testing.assert_close(s.get_opacity, full.get_opacity[kept_flat])
             torch.testing.assert_close(s.get_scaling, full.get_scaling[kept_flat])
 
+    def test_tanh_activation_masks_negative_children(self):
+        model = ScaffoldESVR(anchors=4, children=3, shape=(8, 8, 8), temporal_cutoff=0.0, opacity_activation="tanh", opacity_init=0.5)
+        with torch.no_grad():
+            model.heads["opacity"][-1].bias.copy_(torch.tensor([0.6, -0.6, 0.3]))  # child 1 of every anchor is switched off
+        g = model.generate()
+        negative = (g.intensity[..., 0] <= 0)
+        self.assertTrue(negative.any() and (~negative).any())
+        s = model.at(0.5, g)
+        self.assertTrue((s.get_opacity > 0).all())
+        self.assertEqual(len(s.child_index), int((~negative).reshape(-1).sum()))
+        self.assertTrue((s.anchor_opacity_sum >= 0).all())
+
     def test_data_init_and_bounds(self):
         model = ScaffoldESVR(anchors=8, children=2, shape=(8, 8, 8), flow_scale=8.0, scale_floor=0.05, opacity_init=0.1,
                              anchor_init=torch.rand(8, 4) * 2 - 1)
         g = model.generate()
         self.assertTrue((g.scale >= 0.05).all())
         self.assertTrue((g.flow.abs() <= 8.0).all())
-        self.assertLess((g.opacity_raw.sigmoid().mean() - 0.1).abs(), 0.05)
+        self.assertLess((g.intensity.mean() - 0.1).abs(), 0.05)
 
 
 @unittest.skipUnless(torch.cuda.is_available(), "CUDA voxelizer requires GPU")

@@ -25,7 +25,7 @@ def diagnose(run):
     model.load_state_dict(ck["model"], strict=False)
     voxels = max(model.config["shape"]) / 2
     g = model.generate()
-    intensity = g.opacity_raw.sigmoid()[..., 0]
+    intensity = g.intensity[..., 0]
     scale = g.scale * voxels
     floor = model.config["scale_floor"] * voxels
     alive = intensity > 1 / 255

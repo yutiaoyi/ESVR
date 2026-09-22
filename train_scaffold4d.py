@@ -116,7 +116,9 @@ def main():
     p.add_argument("--flow-scale", type=float, default=1.0,
                    help="Velocity bound in normalized units per unit time (native tanh bound: 1)")
     p.add_argument("--scale-floor-voxels", type=float, default=0.5, help="Floor on a child's final scale, in voxels")
-    p.add_argument("--opacity-init", type=float, default=0.5, help="Initial sigmoid amplitude of every child (0.5 = zero bias)")
+    p.add_argument("--opacity-init", type=float, default=0.5, help="Initial base intensity of every child (0.5 = zero bias for sigmoid)")
+    p.add_argument("--opacity-activation", choices=("sigmoid", "tanh"), default="sigmoid",
+                   help="tanh = upstream's head (children with output <= 0 are excluded from the query); sigmoid = no dead zone (the 09-12 collapse fix)")
     p.add_argument("--init", choices=("random", "data"), default="random",
                    help="random: uniform; data: sample anchors from ground-truth intensity over all training frames (stand-in for upstream's SfM points)")
     p.add_argument("--sigma-max", type=float, default=1e2, help="Upper clamp on the temporal inverse-scale (numerical guardrail; native: none)")
@@ -225,6 +227,7 @@ def main():
                              temporal_cutoff=args.temporal_cutoff, flow_scale=args.flow_scale,
                              scale_floor=args.scale_floor_voxels * voxel, opacity_init=args.opacity_init,
                              anchor_init=anchor_init, anchor_scale=anchor_scale, sigma_max=args.sigma_max, offset_spread=args.offset_spread,
+                             opacity_activation=args.opacity_activation,
                              child_scale_init=None if args.child_scale_init_voxels is None else args.child_scale_init_voxels * voxel).cuda()
     if saved:
         if args.eval_only:
