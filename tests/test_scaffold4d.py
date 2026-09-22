@@ -163,6 +163,34 @@ class Mathematics(unittest.TestCase):
         self.assertEqual(len(s.child_index), int((~negative).reshape(-1).sum()))
         self.assertTrue((s.anchor_opacity_sum >= 0).all())
 
+    def test_error_table_sampling(self):
+        import random
+        from scaffold4d.sampling import ErrorTable
+        table = ErrorTable(n_frames=3, shape=(4, 4, 4), block=2, alpha=1.0, uniform=0.2)
+        self.assertEqual(table.n_tiles, 8)
+        frames = [0, 2]
+        p = table.probabilities(frames)
+        self.assertEqual(len(p), 16)
+        torch.testing.assert_close(torch.tensor(p), torch.full((16,), 1 / 16, dtype=torch.float64))  # nothing visited: uniform
+        start = table.tile_start(5)
+        self.assertEqual(table.tile_of(start), 5)
+        table.update(2, start, 1.0)      # one cell seen, large error
+        table.update(0, (0, 0, 0), 0.0)  # one cell seen, perfect fit
+        p = table.probabilities(frames).reshape(2, 8)
+        # unvisited cells count as the max error (1.0); the zero-error cell keeps only the uniform share
+        self.assertAlmostEqual(p[0, 0], 0.2 / 16)
+        self.assertAlmostEqual(p[1, 5], 0.8 / 15 + 0.2 / 16)
+        self.assertAlmostEqual(p.sum(), 1.0)
+        rng = random.Random(0)
+        picks = [table.sample(frames, rng) for _ in range(200)]
+        self.assertTrue(all(f in frames for f, _ in picks))
+        self.assertTrue(all(all(a % 2 == 0 and 0 <= a < 4 for a in s) for _, s in picks))
+        self.assertLess(sum(1 for f, s in picks if f == 0 and s == (0, 0, 0)), 15)  # ~1.25 % expected vs 6.25 % uniform
+        restored = ErrorTable(3, (4, 4, 4), 2, alpha=1.0, uniform=0.2, state=table.state())
+        torch.testing.assert_close(torch.tensor(restored.probabilities(frames)), torch.tensor(table.probabilities(frames)))
+        with self.assertRaises(ValueError):
+            ErrorTable(2, (4, 4, 4), 2, state=table.state())
+
     def test_data_init_and_bounds(self):
         model = ScaffoldESVR(anchors=8, children=2, shape=(8, 8, 8), flow_scale=8.0, scale_floor=0.05, opacity_init=0.1,
                              anchor_init=torch.rand(8, 4) * 2 - 1)

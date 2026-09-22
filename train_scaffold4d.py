@@ -16,6 +16,7 @@ import torch
 
 from dynamic_esvr.data import VolumeSequence
 from scaffold4d.model import ScaffoldESVR, anchors_from_sequence, query_block
+from scaffold4d.sampling import ErrorTable
 
 
 def expon_lr(step, lr_init, lr_final, max_steps):
@@ -128,6 +129,10 @@ def main():
                    help="Initial final-scale of children in voxels for initial and grown anchors (native: anchor's own cell size)")
     p.add_argument("--block", type=int, default=64)
     p.add_argument("--tile-sampling", action="store_true", help="ESVR-only spatial sampling; no native equivalent (upstream samples camera rays)")
+    p.add_argument("--error-sampling", type=float, default=0.0,
+                   help="Sample (frame, tile) with probability proportional to last-seen block MSE ** this exponent, mixed with a uniform share "
+                        "(--error-sampling-uniform). 0 = off (uniform, the ESVR default); requires --tile-sampling. No native equivalent.")
+    p.add_argument("--error-sampling-uniform", type=float, default=0.25, help="Uniform share of the error-proportional sampler (0 < x <= 1)")
     # Anchor position is frozen (lr 0) natively -- not a tunable default here,
     # it is the paper's own design (scene/gaussian_model.py: position_lr_init
     # = position_lr_final = 0.0). Exposed only so config.json records it.
@@ -175,6 +180,10 @@ def main():
     args = p.parse_args()
     if args.densify_until is None:
         args.densify_until = args.steps // 2
+    if args.error_sampling < 0 or not 0 < args.error_sampling_uniform <= 1:
+        p.error("--error-sampling must be >= 0 and 0 < --error-sampling-uniform <= 1")
+    if args.error_sampling and not args.tile_sampling:
+        p.error("--error-sampling needs --tile-sampling (the error table is per tile)")
     if args.steps < 1 or args.block < 1 or not 0 <= args.lambda_ssim <= 1:
         p.error("Invalid steps, block or SSIM weight")
     if min(args.offset_lr_init, args.offset_lr_final, args.feat_lr, args.scale_lr, args.opacity_mlp_lr_init,
@@ -283,21 +292,31 @@ def main():
     begin = time.perf_counter()
     monitor_indices = sorted(set(sequence.train_indices[i] for i in (0, len(sequence.train_indices) // 2, -1)))
     frame_counts = saved.get("frame_counts", [0] * len(sequence.frames)) if saved else [0] * len(sequence.frames)
+    error_table = None
+    if args.error_sampling:
+        error_table = ErrorTable(len(sequence.frames), sequence.shape, args.block, alpha=args.error_sampling,
+                                 uniform=args.error_sampling_uniform, state=saved.get("error_table") if saved else None)
     with (output / "train.jsonl").open("w") as log:
         for step in range(start_step + 1, args.steps + 1):
-            index = random.choice(sequence.train_indices)
-            frame_counts[index] += 1
-            size = tuple(min(args.block, s) for s in sequence.shape)
-            start = tuple(random.randrange(s - n + 1) for s, n in zip(sequence.shape, size))
-            if args.tile_sampling:
-                start = tuple(random.randrange((s + args.block - 1) // args.block) * args.block for s in sequence.shape)
+            if error_table is not None:
+                index, start = error_table.sample(sequence.train_indices, random)
                 size = tuple(min(args.block, s - a) for s, a in zip(sequence.shape, start))
+            else:
+                index = random.choice(sequence.train_indices)
+                size = tuple(min(args.block, s) for s in sequence.shape)
+                start = tuple(random.randrange(s - n + 1) for s, n in zip(sequence.shape, size))
+                if args.tile_sampling:
+                    start = tuple(random.randrange((s + args.block - 1) // args.block) * args.block for s in sequence.shape)
+                    size = tuple(min(args.block, s - a) for s, a in zip(sequence.shape, start))
+            frame_counts[index] += 1
             target = sequence.volumes[index][tuple(slice(a, a + n) for a, n in zip(start, size))].cuda()
             t = sequence.times[index]
             optimizer.zero_grad(set_to_none=True)
             package, sliced = query_block(model, t, sequence.shape, start, size, return_package=True)
             pred = package["vol"]
             l1 = (pred - target).abs().mean()
+            if error_table is not None:
+                error_table.update(index, start, (pred.detach() - target).square().mean().item())
             loss = (1 - args.lambda_ssim) * l1
             if args.lambda_ssim:
                 loss = loss + args.lambda_ssim * (1 - ssim(pred, target))
@@ -354,12 +373,15 @@ def main():
                 torch.save(dict(model_config=model.config, model=model.state_dict(), optimizer=optimizer.state_dict(),
                     step=step, args=vars(args), manifest=sequence.config,
                     torch_rng=torch.get_rng_state(), cuda_rng=torch.cuda.get_rng_state_all(),
-                    python_rng=random.getstate(), frame_counts=frame_counts), output / "checkpoint.tmp")
+                    python_rng=random.getstate(), frame_counts=frame_counts,
+                    error_table=error_table.state() if error_table is not None else None), output / "checkpoint.tmp")
                 (output / "checkpoint.tmp").replace(output / "checkpoint.pt")
                 if snapshot:
                     import shutil
                     shutil.copyfile(output / "checkpoint.pt", output / f"checkpoint_{step:06d}.pt")
     (output / "frame_sampling_counts.json").write_text(json.dumps(frame_counts))
+    if error_table is not None:
+        (output / "error_table.json").write_text(json.dumps(dict(tiles_per_axis=error_table.tiles_per_axis, block=args.block, mse=error_table.state())))
     rows = evaluate(model, sequence, output / "evaluation", args.block)
     print(json.dumps(rows, indent=2))
 

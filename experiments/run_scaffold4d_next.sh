@@ -2,6 +2,7 @@
 # Next round after the 50 dB probes (2026-09-22). Baseline H4: 150k anchors,
 # 480k steps, decay 1/100, fixed voxelizer, 39.43 dB. Single-variable each.
 #   L1  sigma-max 100 -> 1000 (37-45 % of children sit on the 100 clamp in H4/I3)
+#   M1  error-proportional block sampling (--error-sampling 1.0)
 #   E   "grouping at equal total compute": 9 groups x 10 frames, 53,333 steps and
 #       16,667-anchor cap each (sum = H4's 480k steps / 150k anchors)
 set -euo pipefail
@@ -23,6 +24,8 @@ group() {  # group index 1..9
 }
 case "$1" in
   L1) run L1_sigma1000_480k --manifest experiments/vorts_90_all_train.json --steps 480000 --max-anchors 150000 --sigma-max 1000 ;;
+  # Error-proportional (frame, tile) sampling, exponent 1 (block MSE), 25 % uniform share.
+  M1) run M1_errsample_480k --manifest experiments/vorts_90_all_train.json --steps 480000 --max-anchors 150000 --error-sampling 1.0 ;;
   EA) for g in 1 3 5 7 9; do group $g; done ;;
   EB) for g in 2 4 6 8; do group $g; done ;;
 esac
