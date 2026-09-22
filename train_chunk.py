@@ -594,6 +594,8 @@ if __name__ == "__main__":
     args.save_iterations.append(args.iterations)
 
     print("Optimizing " + args.model_path + "\n")
+    from utils.voxelizer_provenance import record as record_voxelizer
+    record_voxelizer(args.model_path)
 
     # Initialize system state (RNG)
     safe_state(args.quiet)

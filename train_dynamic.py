@@ -152,6 +152,8 @@ def main():
         random.setstate(saved["python_rng"])
     (output / "config.json").write_text(json.dumps(vars(args), indent=2))
     (output / "manifest.json").write_text(json.dumps(sequence.config, indent=2))
+    from utils.voxelizer_provenance import record as record_voxelizer
+    record_voxelizer(output)
     from utils.loss_utils import ssim
     begin = time.perf_counter()
     active = False
