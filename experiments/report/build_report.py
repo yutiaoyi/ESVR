@@ -416,7 +416,7 @@ parts.append('''</tbody></table></div>
 <div class="lineage">基元、核、监督来自 ESVR;锚点/特征/子椭球结构、线性运动、广义高斯时间门、7 组优化器、dynamic-aware 生长来自 4D-Scaffold-GS 官方代码。不是逐行等价移植;每一处偏离及其实测影响如下(详见 <code>docs/ESVR_SCAFFOLD4D.md</code>)</div>
 <div class="tablewrap"><table class="dev"><thead><tr><th>偏离上游之处</th><th>原因</th><th>实测</th></tr></thead><tbody>
 <tr><td>opacity 头用 sigmoid,而非 tanh + “&gt;0 掩码”</td><td>tanh + 零特征初始化在 ~50 步内让全部孩子转负、永久死亡</td><td>没有它无法训练</td></tr>
-<tr><td>上游 <code>min_opacity</code> 锚点剪枝几乎不触发</td><td>K 个 sigmoid 强度之和很少低于每次 0.005;上游 tanh 给出精确的 0</td><td>每次运行只删 1–70 个;<code>--prune-dead</code>(ESVR 的 prune_zeros / 暗剪枝)能回收但不改变 PSNR(D.4)</td></tr>
+<tr><td>上游 <code>min_opacity</code> 锚点剪枝:机制与调度同上游(每 100 步、1,500 步起、到 <code>--densify-until</code> = 总步数/2 为止,之后不再剪也不再长),但触发情形不同</td><td>K 个 sigmoid 强度之和要低于每次 0.005 才剪;上游 tanh 给出精确的 0。<b>2026-09-22 修正</b>:此前写“几乎不触发、每次运行只删 1–70 个”是错的——那只对 40k / 60k 上限的运行成立</td><td>H4(150k 上限)整个生长窗口内按此规则删了 50,879 个锚点(占新生 194,879 的 26%,集中在上限填满后的 20k–120k 步:新长出的锚点孩子全黑 → 被删 → 空位再长,形成周转);G5 41,111;I3 40,458。40k / 60k 上限:K4 仅 425(另有 <code>--prune-dead</code> 死锚点规则 26,190),T2 587。两种规则都不改变 PSNR(D.4、D.8)</td></tr>
 <tr><td>生长统计用 3D 中心梯度代替 2D 屏幕梯度</td><td>没有相机;这是 ESVR 自己 <code>add_densification_stats</code> 的量</td><td>阈值按 3D 梯度 p90 校准(修复核 1.2e-3)</td></tr>
 <tr><td>“观测足够”判据按块占体积比例缩放</td><td>孩子只在其 64³ 块被采到时才被观测</td><td>—</td></tr>
 <tr><td>锚点数上限 + 按投票强度排序准入</td><td>上游无上限</td><td>40k / 100k / 150k / 300k 均已测</td></tr>
