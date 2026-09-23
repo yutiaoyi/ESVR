@@ -231,6 +231,9 @@ intensities 0.02–0.14, 41.2 dB, 1.0 MB/frame.
 3. **σ clamp binds**: 13–27 % of children sit at σ=100 (gate half-width
    0.8 frame). With the temporal grid at one frame this may limit how
    sharply a child can switch off; `--sigma-max` exposed for testing.
+   Resolved 2026-09-22 (`next/L1_sigma1000_480k`): raising the clamp to 1000
+   leaves the useful children's half-width distribution unchanged and costs
+   0.47 dB; the clamped children were the dark/floor-pinned ones. Not a bottleneck.
 4. Pruning fires far less per check than upstream's, because sigmoid intensities never reach an exact 0 (upstream's tanh does), but it is not inactive: at the 150k cap H4 pruned 50,879 anchors over the growth window (26 % of the 194,879 grown; concentrated in steps 20k–120k after the cap filled — newly grown anchors whose children stay dark are removed and the slots regrown), G5 41,111, I3 40,458. At 40k/60k caps it is small (K4 425 besides 26,190 by `--prune-dead`, T2 587). Corrected 2026-09-22; the earlier "1–70 anchors per run" was wrong. Schedule matches upstream: `adjust_anchors` (grow + prune) every `--densify-every` 100 steps from `--densify-from` 1,500 until `--densify-until` (default steps // 2, upstream 60k of 120k); after that neither pruning nor growing runs, which is why dead capacity accumulates and post-training compaction is needed
 5. Anchors outside the volume: 1.4–2.5 % (grid cells straddling the
    boundary); harmless.
