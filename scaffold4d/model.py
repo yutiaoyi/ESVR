@@ -148,14 +148,34 @@ class ScaffoldESVR(nn.Module):
         n = anchors * children
         self.register_buffer("child_grad_accum", torch.zeros(n), persistent=False)
         self.register_buffer("child_denom", torch.zeros(n), persistent=False)
-        # ESVR prune_zeros analogue: a child whose data gradient is exactly
-        # zero while its bounding box intersects the block covered no voxel.
+        # ESVR prune_zeros analogue. child_seen counts the steps on which a
+        # child's bounding box intersected the trained block; child_effective
+        # counts those on which it actually touched a voxel -- measured with
+        # the voxelizer's count kernel (ESVR's count_query) when the caller
+        # supplies voxel_counts, otherwise approximated by a nonzero position
+        # gradient (a fit with exactly zero residual over the child's whole
+        # support would be misjudged by the fallback; see docs).
         self.register_buffer("child_seen", torch.zeros(n), persistent=False)
         self.register_buffer("child_effective", torch.zeros(n), persistent=False)
         self.register_buffer("anchor_opacity_accum", torch.zeros(anchors), persistent=False)
         self.register_buffer("anchor_denom", torch.zeros(anchors), persistent=False)
 
     statistic_buffers = ("child_grad_accum", "child_denom", "child_seen", "child_effective")
+    anchor_statistic_buffers = ("anchor_opacity_accum", "anchor_denom")
+
+    def statistics_state(self):
+        """Growth/prune statistics (non-persistent buffers, sized by the
+        current population) for checkpointing; restore with
+        load_statistics_state so a resumed run continues the same windows."""
+        return {name: getattr(self, name).detach().clone() for name in self.statistic_buffers + self.anchor_statistic_buffers}
+
+    def load_statistics_state(self, state):
+        for name in self.statistic_buffers + self.anchor_statistic_buffers:
+            target = getattr(self, name)
+            value = state[name].to(target)
+            if value.shape != target.shape:
+                raise ValueError(f"Statistics {name} has shape {tuple(value.shape)}, model expects {tuple(target.shape)}")
+            target.copy_(value)
 
     def _initial_offsets(self, n, device=None):
         # Upstream starts all K children of an anchor at zero offset, i.e.
@@ -224,10 +244,12 @@ class ScaffoldESVR(nn.Module):
         self.offset.clamp_(-10, 10)
 
     @torch.no_grad()
-    def record_statistics(self, sliced, visibility, lambda_temporal_sigma=1.0):
+    def record_statistics(self, sliced, visibility, lambda_temporal_sigma=1.0, voxel_counts=None):
         """Upstream training_statis: per-child gradient weighted by
         opacity_t * sigma^gamma (dynamic-aware, sigma_denom_weight on), and
-        per-anchor base-opacity sums for pruning."""
+        per-anchor base-opacity sums for pruning. voxel_counts (per selected
+        child, from count_children) makes the --prune-dead 'effective' count
+        ESVR's actual voxel-coverage count instead of the gradient proxy."""
         self.anchor_opacity_accum += sliced.anchor_opacity_sum
         self.anchor_denom += 1
         if sliced.get_xyz.grad is None:
@@ -238,7 +260,8 @@ class ScaffoldESVR(nn.Module):
         self.child_grad_accum.index_add_(0, index, grad * weight)
         self.child_denom.index_add_(0, index, weight)
         self.child_seen.index_add_(0, index, torch.ones_like(grad))
-        self.child_effective.index_add_(0, index, (grad > 0).float())
+        effective = (voxel_counts[visibility] > 0) if voxel_counts is not None else (grad > 0)
+        self.child_effective.index_add_(0, index, effective.float())
 
     population_params = ("anchor", "anchor_feat", "offset", "log_offset_scale")
 
@@ -365,6 +388,22 @@ class ScaffoldESVR(nn.Module):
         return dict(before=n, after=len(self.anchor), grown=added, pruned=int(prune.sum()), pruned_dead=dead_count,
                     observed_children=int(observed.sum()), grad_p50=float(grads[observed].median()) if observed.any() else 0.0,
                     grad_p90=float(grads[observed].quantile(0.9)) if observed.any() else 0.0)
+
+
+def count_children(sliced, shape, start, size):
+    """Per selected child: number of voxels of the block it actually writes
+    (ESVR count_query / GaussianVoxelizer_Count). Zero-length slices give an
+    empty tensor."""
+    from gaussian_renderer import count_query
+    if not len(sliced.get_xyz):
+        return torch.zeros(0, dtype=torch.long, device=sliced.child_index.device)
+    step = 2 / max(shape)
+    center = [(a + n / 2 - s / 2) * step for a, n, s in zip(start, size, shape)]
+    with torch.no_grad():
+        detached = SimpleNamespace(get_xyz=sliced.get_xyz.detach(), get_opacity=sliced.get_opacity.detach(),
+                                   get_scaling=sliced.get_scaling.detach(), get_rotation=sliced.get_rotation.detach())
+        package = count_query(detached, center, size, [s * step for s in size], SimpleNamespace(compute_cov3D_python=False, debug=False))
+    return package["gaussians_count"].reshape(-1)
 
 
 def query_block(model, timestamp, shape, start, size, return_package=False):

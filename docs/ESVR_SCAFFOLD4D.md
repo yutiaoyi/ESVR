@@ -261,9 +261,23 @@ what was measured:
 | σ upper clamp 1e2 (`--sigma-max`) is **binding**: 37 % (H4) / 45 % (I3) of children sit on it, i.e. want a temporal half-width below 0.8 frames (2026-09-22 `diagnose_scaffold4d.py`; median useful half-width 3.5–4 frames, so children barely share across time) | numerical guardrail; upstream has no clamp | `screen_fixed/T5` (1e3, 40k steps) 0.0 dB; `next/L1_sigma1000_480k` at full length pending |
 | `--error-sampling α` (off by default): (frame, tile) drawn ∝ last-seen block MSE^α with a uniform share (`scaffold4d/sampling.py`) | ESVR samples sub-volumes uniformly; upstream renders whole frames. `fifty/K2` showed optimizer updates are the bottleneck, so spend them where the error is | `next/M1_errsample_480k` pending |
 | global volume regularizer on all time-active children (upstream: on rendered children) | mini-batch data term + global regularizer | visibility-gated variant 0.0 dB; removing it −0.6 dB |
+| `--prune-dead` (off by default): an anchor whose children are all dark or, after enough observations, never wrote a voxel is removed and its slot regrown | ESVR's prune_zeros / dark pruning, ported to anchors | since 2026-09-22 'never wrote a voxel' is measured with the voxelizer's count kernel (`count_children` = ESVR `count_query`), no longer by a zero position gradient (the proxy misjudges a child whose residual is exactly zero over its whole support; pointed out by the second external review). Overhead ≈ +10 % during the growth window. T2 / K4 (proxy version) showed no PSNR change |
+| growth/prune statistics are saved in the checkpoint (`growth_stats`) and restored on `--resume` | they are non-persistent buffers sized by the population, so they were lost on resume before 2026-09-22; a resumed run restarted its statistics windows. No recorded run used `--resume` | — |
 | `--final-lr-scale 0.01` (ESVR recipe, **not the default**) | four upstream-constant LR groups oscillate ±0.7 dB late in training under block supervision | +5 dB at 150k anchors; default stays 1.0 so argparse defaults remain the paper's |
 | per-frame optimisation budget ≈ 1/12 of static ESVR's | 90 frames share one run | static ceiling study, `output/experiments/static_ceiling/RESULTS.md` |
 | upstream's `_prune_anchor_optimizer` clamp of the log child-scale columns to ≤ 0.05 on every `adjust_anchor` call is not ported | our `stabilize()` caps `log_offset_scale` at log(10) and the child scale is floored/gated separately; upstream's cap is in scene units | not measured (found by the 09-22 independent review; almost certainly inert here) |
+
+## Second external review (2026-09-22) — outcome
+
+Five points were raised against the state after the first review; each was checked against the code and the upstream sources.
+
+1. **`--prune-dead` used a zero position gradient as "covered no voxel" — correct, fixed.** ESVR's `prune_zeros` calls `count_query`, which returns the number of voxels each Gaussian actually writes; a zero position gradient is only a proxy (exact for a child the kernel skips, wrong for a child whose residual is exactly zero over its support). `record_statistics` now takes `voxel_counts` from `count_children` (the same count kernel) when `--prune-dead` is on; the gradient proxy remains the fallback when no counts are supplied. Only `--prune-dead` runs (T2, K4) were affected; both showed no PSNR change, so no recorded conclusion changes.
+2. **Growth statistics were not checkpointed — correct, fixed.** `statistics_state()` / `load_statistics_state()`; the trainer stores them as `growth_stats` and restores them on `--resume` (a warning is printed for older checkpoints inside the growth window). No recorded run used `--resume`.
+3. **Uniform sliding-block sampling covers the centre more than the faces, so `block_fraction` is not each child's observation probability — correct as stated; no recorded run is affected.** Every recorded run used `--tile-sampling` (128³ / 64³ tiles, where the fraction is exact). The trainer now prints a warning when growing is on without tile sampling.
+4. **Compaction crashed on an all-dropped population — correct, fixed** with an explicit error in `build_compact` and the script (an empty field has nothing to write).
+5. **Growing is not a verbatim port — agreed and already documented** (`--grow-upstream-level-skip` restores upstream's level skip; newborn layout follows the paper's semantics, see the deviation table). The reviewer's assessment of the base-intensity pruning (form correct, conservative under sigmoid, sum-vs-mean not a "fix") matches ours.
+
+Tests: 16 pass on GPU (new: statistics round-trip, count-based effective statistic, empty-compaction guard, count kernel vs volume contribution).
 
 ## Data contract
 

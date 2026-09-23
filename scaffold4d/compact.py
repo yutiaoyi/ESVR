@@ -37,6 +37,8 @@ class CompactScaffold(ScaffoldESVR):
 def build_compact(model, keep, fp16=False):
     """keep: bool (anchors, children). Anchors with no kept child are dropped."""
     anchor_keep = keep.any(1)
+    if not anchor_keep.any():
+        raise ValueError("No child survives compaction (all below the dark/floor/selection thresholds); nothing to write")
     compact = CompactScaffold(**{**model.config, "anchors": int(anchor_keep.sum())}).to(model.anchor.device)
     for name in ANCHOR_TENSORS + ("offset",):
         getattr(compact, name).copy_(getattr(model, name)[anchor_keep])

@@ -15,7 +15,7 @@ import numpy as np
 import torch
 
 from dynamic_esvr.data import VolumeSequence
-from scaffold4d.model import ScaffoldESVR, anchors_from_sequence, query_block
+from scaffold4d.model import ScaffoldESVR, anchors_from_sequence, count_children, query_block
 from scaffold4d.sampling import ErrorTable
 
 
@@ -284,6 +284,10 @@ def main():
         torch.set_rng_state(saved["torch_rng"].cpu())
         torch.cuda.set_rng_state_all([s.cpu() for s in saved["cuda_rng"]])
         random.setstate(saved["python_rng"])
+        if saved.get("growth_stats") is not None:
+            model.load_statistics_state(saved["growth_stats"])
+        elif start_step < args.densify_until:
+            print("WARNING: checkpoint predates growth-statistics saving; the growing/pruning windows restart from zero", flush=True)
     (output / "config.json").write_text(json.dumps(vars(args), indent=2))
     (output / "manifest.json").write_text(json.dumps(sequence.config, indent=2))
     from utils.voxelizer_provenance import record as record_voxelizer
@@ -292,6 +296,9 @@ def main():
     begin = time.perf_counter()
     monitor_indices = sorted(set(sequence.train_indices[i] for i in (0, len(sequence.train_indices) // 2, -1)))
     frame_counts = saved.get("frame_counts", [0] * len(sequence.frames)) if saved else [0] * len(sequence.frames)
+    if not args.tile_sampling and args.densify_until > args.densify_from:
+        print("WARNING: uniform sliding-block sampling covers the volume centre far more often than its faces; the growing "
+              "statistics assume every child is observed with probability block_fraction, which only holds for --tile-sampling", flush=True)
     error_table = None
     if args.error_sampling:
         error_table = ErrorTable(len(sequence.frames), sequence.shape, args.block, alpha=args.error_sampling,
@@ -335,7 +342,10 @@ def main():
             # Native schedule (train.py): statistics between start_stat and
             # update_until, anchor adjustment every update_interval after update_from.
             if args.start_stat < step < args.densify_until and len(sliced.get_xyz):
-                model.record_statistics(sliced, package["visibility_filter"], args.lambda_temporal_sigma)
+                # --prune-dead judges "covered no voxel" with the voxelizer's
+                # count kernel (ESVR prune_zeros), not the gradient proxy.
+                counts = count_children(sliced, sequence.shape, start, size) if args.prune_dead else None
+                model.record_statistics(sliced, package["visibility_filter"], args.lambda_temporal_sigma, voxel_counts=counts)
             if args.clip_grad:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip_grad, error_if_nonfinite=True)
             for group in optimizer.param_groups:
@@ -374,7 +384,8 @@ def main():
                     step=step, args=vars(args), manifest=sequence.config,
                     torch_rng=torch.get_rng_state(), cuda_rng=torch.cuda.get_rng_state_all(),
                     python_rng=random.getstate(), frame_counts=frame_counts,
-                    error_table=error_table.state() if error_table is not None else None), output / "checkpoint.tmp")
+                    error_table=error_table.state() if error_table is not None else None,
+                    growth_stats=model.statistics_state()), output / "checkpoint.tmp")
                 (output / "checkpoint.tmp").replace(output / "checkpoint.pt")
                 if snapshot:
                     import shutil

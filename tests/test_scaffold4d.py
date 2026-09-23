@@ -191,6 +191,42 @@ class Mathematics(unittest.TestCase):
         with self.assertRaises(ValueError):
             ErrorTable(2, (4, 4, 4), 2, state=table.state())
 
+    def test_statistics_state_roundtrip_and_shape_check(self):
+        model = ScaffoldESVR(anchors=4, children=3, shape=(8, 8, 8))
+        for name in model.statistic_buffers + model.anchor_statistic_buffers:
+            getattr(model, name).uniform_(1, 5)
+        state = model.statistics_state()
+        fresh = ScaffoldESVR(anchors=4, children=3, shape=(8, 8, 8))
+        self.assertTrue((fresh.child_denom == 0).all())
+        fresh.load_statistics_state(state)
+        for name in model.statistic_buffers + model.anchor_statistic_buffers:
+            torch.testing.assert_close(getattr(fresh, name), getattr(model, name))
+        with self.assertRaises(ValueError):
+            ScaffoldESVR(anchors=5, children=3, shape=(8, 8, 8)).load_statistics_state(state)
+
+    def test_record_statistics_effective_uses_voxel_counts(self):
+        model = ScaffoldESVR(anchors=2, children=2, shape=(8, 8, 8), temporal_cutoff=0.0)
+        sliced = model.at(0.5)
+        (sliced.get_xyz.sum() * 0.0 + sliced.get_xyz[:, 0].sum()).backward()  # nonzero position gradient for every child
+        visibility = torch.ones(len(sliced.child_index), dtype=torch.bool)
+        # Gradient proxy: every child looks effective.
+        model.record_statistics(sliced, visibility)
+        self.assertTrue((model.child_effective == 1).all())
+        # Voxel counts say only the first child touched a voxel.
+        counts = torch.zeros(len(sliced.child_index), dtype=torch.long)
+        counts[0] = 7
+        model.record_statistics(sliced, visibility, voxel_counts=counts)
+        expected = torch.ones(4)
+        expected[sliced.child_index[0]] += 1
+        torch.testing.assert_close(model.child_effective, expected)
+        self.assertTrue((model.child_seen == 2).all())
+
+    def test_compact_rejects_empty_keep(self):
+        from scaffold4d.compact import build_compact
+        model = ScaffoldESVR(anchors=3, children=2, shape=(8, 8, 8))
+        with self.assertRaises(ValueError):
+            build_compact(model, torch.zeros(3, 2, dtype=torch.bool))
+
     def test_data_init_and_bounds(self):
         model = ScaffoldESVR(anchors=8, children=2, shape=(8, 8, 8), flow_scale=8.0, scale_floor=0.05, opacity_init=0.1,
                              anchor_init=torch.rand(8, 4) * 2 - 1)
@@ -202,6 +238,39 @@ class Mathematics(unittest.TestCase):
 
 @unittest.skipUnless(torch.cuda.is_available(), "CUDA voxelizer requires GPU")
 class CUDA(unittest.TestCase):
+    def test_count_children_matches_voxel_contribution(self):
+        from scaffold4d.model import count_children
+        torch.manual_seed(1)
+        model = ScaffoldESVR(anchors=6, children=3, shape=(12, 10, 8), temporal_cutoff=0.0).cuda()
+        with torch.no_grad():
+            model.anchor[:, :3] = torch.rand_like(model.anchor[:, :3]) * 1.2 - 0.6
+            # child scale ~0.25 (1.5 voxels): most children touch voxels, some
+            # small/edge ones do not, so both count classes occur.
+            model.log_offset_scale[:] = torch.log(torch.tensor([0.05, 0.05, 0.05, 0.1, 0.25, 0.25, 0.25]))
+        sliced = model.at(0.4)
+        counts = count_children(sliced, (12, 10, 8), (0, 0, 0), (12, 10, 8))
+        self.assertEqual(counts.shape, (len(sliced.child_index),))
+        self.assertGreater(int((counts > 0).sum()), 0)
+        # A child removed from the population changes the volume iff it had a nonzero count.
+        full = query_block(model, 0.4, (12, 10, 8), (0, 0, 0), (12, 10, 8)).detach()
+        zero = (counts == 0).nonzero().flatten()
+        if len(zero):
+            sliced.get_opacity = sliced.get_opacity.detach().clone()
+            sliced.get_opacity[zero] = 0.0
+            from gaussian_renderer import query
+            from types import SimpleNamespace as NS
+            step = 2 / 12
+            center = [(n / 2 - s / 2) * step for n, s in zip((12, 10, 8), (12, 10, 8))]
+            without = query(NS(get_xyz=sliced.get_xyz.detach(), get_opacity=sliced.get_opacity, get_scaling=sliced.get_scaling.detach(), get_rotation=sliced.get_rotation.detach()),
+                            center, (12, 10, 8), [s * step for s in (12, 10, 8)], NS(compute_cov3D_python=False, debug=False))["vol"]
+            torch.testing.assert_close(full, without, atol=1e-6, rtol=1e-5)
+        # All-dark population: nothing is counted.
+        with torch.no_grad():
+            model.heads["opacity"][-1].bias.fill_(-20.0)
+        dark = model.at(0.4)
+        if len(dark.child_index):
+            self.assertEqual(int(count_children(dark, (12, 10, 8), (0, 0, 0), (12, 10, 8)).sum()), 0)
+
     def test_voxelizer_forward_backward_and_tiles(self):
         torch.manual_seed(3)
         model = ScaffoldESVR(anchors=6, children=3, shape=(12, 10, 8), temporal_cutoff=0.0).cuda()

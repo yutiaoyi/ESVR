@@ -80,6 +80,8 @@ def main():
                 ever[model.at(t, g).child_index] = True
             never_selected = int((keep.reshape(-1) & ~ever).sum())
             keep &= ever.reshape(keep.shape)
+    if not keep.any():
+        p.error(f"No child survives the thresholds (dark {args.dark}, drop_floor={args.drop_floor}, drop_never_selected={args.drop_never_selected}); nothing to write")
     compact = build_compact(model, keep, fp16=args.fp16)
     save_compact(compact, out / "model_compact.pt", ck["manifest"], ck["args"], fp16=args.fp16)
     # Evaluate what was written, not the in-memory object.
