@@ -103,17 +103,25 @@ for run, r in runs.items():
         pt("s4d_bad", r["mb"], r["psnr"], "ablation/" + run.split("/")[1] + "(未修复核)", faded=True)
     elif run.startswith("fixed_kernel/"):
         pt("s4d_fix", r["mb"], r["psnr"], "fixed_kernel/" + run.split("/")[1])
-    elif run.startswith(("scale/", "decay/", "long/", "fifty/")):
+    elif run.startswith(("scale/", "decay/", "long/", "fifty/", "next/")) and not run.startswith("next/E_group"):
         partial = r.get("frames", 90) != 90
         label = run + (f"(只训 {r['frames']} 帧,不与 90 帧数字可比)" if partial else "")
         pt("s4d_fix", r["mb"], r["psnr"], label, faded=partial)
         if run in compact:
             pt("s4d_compact", compact[run]["mb_after"], compact[run]["psnr_after"], label + " · 压缩后", faded=partial)
 
+E_GROUPS = sorted(k for k in runs if k.startswith("next/E_group"))
+if len(E_GROUPS) == 9:
+    e_mb = sum(runs[k]["mb"] for k in E_GROUPS)
+    e_psnr = sum(runs[k]["psnr"] for k in E_GROUPS) / 9   # equal-sized groups: mean of means = 90-frame mean
+    pt("s4d_fix", round(e_mb, 1), round(e_psnr, 3), "E1–E9 分组合计(9 × 10 帧,同等总计算量)")
+    if all(k in compact for k in E_GROUPS):
+        pt("s4d_compact", round(sum(compact[k]["mb_after"] for k in E_GROUPS), 1), round(sum(compact[k]["psnr_after"] for k in E_GROUPS) / 9, 3), "E1–E9 分组合计 · 压缩后")
+
 # ---------- page ----------
 today = datetime.date.today().isoformat()
 n_s4d = len(runs)
-best_key, best_fix = max(((k, r) for k, r in runs.items() if k.startswith(("fixed_kernel/", "scale/", "decay/", "long/", "fifty/")) and r.get("frames", 90) == 90), key=lambda kv: kv[1]["psnr"])
+best_key, best_fix = max(((k, r) for k, r in runs.items() if k.startswith(("fixed_kernel/", "scale/", "decay/", "long/", "fifty/", "next/")) and r.get("frames", 90) == 90), key=lambda kv: kv[1]["psnr"])
 
 parts = []
 parts.append(f'''<title>ESVR 时变扩展实验记录</title>
@@ -361,6 +369,48 @@ for name, what, tag, note, best in FIFTY:
     parts.append(s4d(name, "fifty/" + name, what, pill(kind, tag), best=best, note=note))
 parts.append('''</tbody></table></div>
 <div class="callout"><b>结论:四条路都没有把 90 帧模型推过 40 dB,K1 给出了最重要的信息。</b>即使每帧优化量 ×9、每时刻有用高斯翻倍,10 帧模型也只有 41.2 dB;而同一基元、同一核的静态单帧在更少基元、相近每帧优化量下有 44.7(S3b),加到 14 万基元有 49.7(S5b)。所以 50 dB 的缺口有三层:(1) <b>时间维共享的表征代价</b>——所有时刻的孩子都由同一个锚点特征经共享 MLP 生成,只能做线性运动 + 一个广义高斯时间门,一个孩子跨帧复用时对每一帧都是近似;(2) <b>每时刻有效容量不足</b>——150k 锚点 × 10 孩子里每时刻只有约 1.7–2 万个有用高斯,而静态 50 dB 需要每时刻约 14 万个,现有生长规则(只往空格子里长、3D 梯度过阈值)长不出、也养不活这么多;(3) 步数在 480k 附近饱和(I2)。K2 说明瓶颈是更新次数而非批量;K3 说明把生长拖后无益;K4 说明小上限 + 回收在同一条预算曲线上,是控制“压缩前大小”的正当手段但不涨 PSNR。<br><br><b>下一步候选(均未做):</b>a) 提高每时刻有效容量——放宽“只长空格子”的限制、降低生长阈值或让每个锚点生成更多能存活的孩子,并用 K4 式上限 + 回收控制大小;b) 提高时间分辨力——每锚点分段运动、更窄的时间门或“时间局部”锚点,减少跨帧复用带来的近似;c) 补做<b>留出帧验证</b>,在加容量之前确认模型不是在逐帧记忆。</div>
+</section>
+<section class="method"><h3 class="grp">D.9 第二轮探针:σ 上限、分组、按误差采样、基础学习率(修复核;L1 / M1 / E 以 H4 = 39.43 为基准,N 系列以 120k 步的 G5 = 38.04 为基准;2026-09-22)</h3>''' + th)
+NEXT = [("L1_sigma1000_480k", "H4 + 时间门 σ 上限 100 → 1000(<code>--sigma-max</code>)", "neg", "负面记录",
+         "<b>38.96</b>(−0.47)。动机:诊断显示 H4 有 37% 的孩子贴在 σ = 100 上限(最窄半宽 0.8 帧)。放开后只有 0.1% 贴新上限,但<b>有用</b>孩子的时间半宽分布不变(中位 3.56 vs 3.48 帧,p5 1.0 vs 1.15)——原来贴上限的几乎都是暗 / 贴尺度下限的死孩子。σ 上限不是瓶颈。", False),
+        ("M1_errsample_480k", "H4 + 按误差采样训练块(<code>--error-sampling 1.0</code>:(帧, 64³ 块) 按上次 MSE 成比例抽样,25% 均匀份额;<code>scaffold4d/sampling.py</code>)", "neg", "负面记录",
+         "<b>39.15</b>(−0.28,噪声内),但 90 帧里 87 帧低于 H4;帧间标准差 0.42 → 0.34,最低帧 37.05 → 37.26。最终误差表里最难 / 最易块的 MSE 只差 2 倍——误差分布近乎平坦,没有“难块”可挖,挪走的均匀覆盖反而略有代价(帧采样次数 4,697–7,151,均匀为 5,333)。第一次启动因四个并发运行显存不足在 5k 步 OOM,重跑。", False)]
+for name, what, kind, tag, note, best in NEXT:
+    run = "next/" + name
+    if run in runs:
+        parts.append(s4d(name, run, what, pill(kind, tag), best=best, note=note))
+    else:
+        parts.append(row(name, what, f"output/scaffold4d/next/{name}/", "480,000 步", "none", pill("run"), "—", counts="—"))
+if len(E_GROUPS) == 9:
+    e_sec = sum(runs[k]["seconds"] for k in E_GROUPS); e_lo = min(runs[k]["pmin"] for k in E_GROUPS); e_hi = max(runs[k]["pmax"] for k in E_GROUPS)
+    e_c = sum(compact[k]["mb_after"] for k in E_GROUPS) if all(k in compact for k in E_GROUPS) else None
+    e_dn = sum(compact[k]["dropnever"]["mb_after"] for k in E_GROUPS) if all("dropnever" in compact.get(k, {}) for k in E_GROUPS) else None
+    st = [stats[k] for k in E_GROUPS]
+    e_total = sum(x["total"] for x in st); e_useful = sum(x["useful_total"] for x in st); e_never_useful = sum(x["useful_never_selected"] for x in st)
+    per = " · ".join(f'E{i + 1} {runs[k]["psnr"]:.1f}' for i, k in enumerate(E_GROUPS))
+    scale = f'<b>{e_sec:,} s</b> 合计 · 9 × 53,333 步<br>{e_mb:.1f} MB 合计' + (f'<br><span class="sub">压缩后 <b>{e_c:.1f} MB</b>' + (f';再删“从未选入” {e_dn:.1f} MB' if e_dn else "") + '</span>' if e_c else "")
+    counts = (f'<b>9 × 16,667</b> 锚点 × 10<br>= {e_total:,} 高斯<br><span class="sub">有用总数 {e_useful:,} ({e_useful / e_total:.0%})</span>'
+              f'<br><span class="sub">各组 10 帧从未选入、其中“有用” 合计 {e_never_useful:,}(随机 t 初始化把容量放在了本组没训的时刻)</span>'
+              f'<br><span class="sub">有用/查询 各组均值 {min(x["useful_query_mean"] for x in st):,}–{max(x["useful_query_mean"] for x in st):,}</span>'
+              f'<br><span class="sub">时间半宽中位 {min(x["halfwidth_frames_p50"] for x in st):.0f}–{max(x["halfwidth_frames_p50"] for x in st):.0f} 帧(53k 步时时间门尚未收窄;480k 步的 K1 是 0.9、H4 是 3.5)</span>')
+    parts.append(row("E1–E9 分组重建(合计)", "90 帧分 9 组、每组 10 帧独立训练:每组 53,333 步、锚点上限 16,667,合计恰为 H4 的 480k 步 / 150k 锚点(<code>--grow-t-size 1/89</code>);可视化为 E5(第 41–50 帧,与 K1 同一段)"
+        + f'<div class="note"><b>{e_psnr:.2f}</b>(−{39.431 - e_psnr:.1f} vs H4;各组 vs H4 同段 −3.6 … −11.3)。{per}。同等总计算量下,把 90 帧放进一个模型远好于 9 个各训 1/9 的小模型:共享的锚点特征 + MLP 让一帧上的更新惠及其它帧。K1 的 +1.8 dB(D.8)只是 9 倍每帧计算量买来的。E9(第 81–90 帧)最差,其时间门中位半宽 117 帧,几乎没有时间分辨。</div>',
+        "output/scaffold4d/next/E_group{1..9}_frames_*/", scale, "scaffold4d__next__E_group5_frames_41_50", pill("neg", "负面记录"), f'{e_psnr:.2f} dB', f'{e_lo:.2f} – {e_hi:.2f}', counts=counts, kernel="fixed"))
+LRS = [("N1_feat_x3_120k", "特征学习率 ×3(0.0075 → 0.0225)", "0.0:无变化", None),
+       ("N2_feat_x0.3_120k", "特征学习率 ×0.3(→ 0.00225)", "<b>+0.47</b>,刚好超过种子噪声 0.42;压缩后 9.3 MB(其余 120k 步运行 7–8 MB):更低的特征学习率让更多孩子存活", None),
+       ("N3_offset_x3_120k", "offset 学习率 ×3(0.01 / 1e-4 → 0.03 / 3e-4)", "+0.30,噪声内但方向为正", None),
+       ("N4_offset_x0.3_120k", "offset 学习率 ×0.3(→ 0.003 / 3e-5)", "<b>−1.11</b>,明确有害:offset 学习率的方向是“再高”", None),
+       ("N5_mlp_x3_120k", "三个 MLP 学习率 ×3(shape 0.012、flow 0.003、opacity 0.006 / 6e-5)", "+0.28,噪声内", None),
+       ("N6_mlp_x0.3_120k", "三个 MLP 学习率 ×0.3", "", None)]
+for name, what, note, _ in LRS:
+    run = "next/" + name
+    if run in runs:
+        d = runs[run]["psnr"] - runs["scale/G5_K10_150k_120k_decay"]["psnr"]
+        parts.append(s4d(name, run, "G5 + " + what, pill("final" if d > 0.42 else "neg" if d < -0.42 else "final", "当前结论" if d > 0.42 else "负面记录" if d < -0.42 else "噪声内"), note=note or f"{d:+.2f}"))
+    else:
+        parts.append(row(name, "G5 + " + what, f"output/scaffold4d/next/{name}/", "120,000 步", "none", pill("run"), "—", counts="—"))
+parts.append('''</tbody></table></div>
+<div class="callout"><b>结论:</b>四个方向里三个关掉——σ 上限(L1)、分组重建(E)、按误差采样(M1)都不涨 PSNR,其中分组在同等计算量下差 6 dB,是对“4D 共享有没有用”的最直接回答:有用,而且是 6 dB 级别的。上游七组学习率在这个数据上并未调优:offset 学习率明显偏低(×0.3 → −1.1,×3 → +0.3),特征学习率略偏高(×0.3 → +0.5),MLP 学习率也偏低(×3 → +0.3,×0.3 → −0.5)。单项效应都在 0.3–0.5 dB,与噪声同量级,但三组的方向都一致且两侧对称。<b>正在跑</b>:O1 = H4 + 特征 ×0.3 + offset ×3 + MLP ×3(480k 步)和 O2 = G5 + offset ×10(120k 步);如果 O1 ≥ +1 dB 则把这组学习率写成 ESVR 配方。另一个观察:时间门在 53k 步时中位半宽还有 12–30 帧,480k 步才收到 3.5 帧——σ 学得慢,MLP 学习率 ×3 略正可能与此有关。</div>
 </section>
 <section class="method"><div class="mh"><span class="letter">E</span><h2>实现与上游的对应与偏离(审计 2026-09-22)</h2></div>
 <div class="lineage">基元、核、监督来自 ESVR;锚点/特征/子椭球结构、线性运动、广义高斯时间门、7 组优化器、dynamic-aware 生长来自 4D-Scaffold-GS 官方代码。不是逐行等价移植;每一处偏离及其实测影响如下(详见 <code>docs/ESVR_SCAFFOLD4D.md</code>)</div>
