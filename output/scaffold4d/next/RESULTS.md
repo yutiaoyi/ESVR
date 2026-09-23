@@ -28,6 +28,7 @@ shows those were the dead children, not the useful ones.
 | N4_offset_x0.3_120k | offset LR → 0.003/3e-5 | G5 38.04 | 36.927 | **−1.11** | 49.8 / 7.2 MB |
 | N5_mlp_x3_120k | shape/flow/opacity MLP LR ×3 | G5 38.04 | 38.324 | +0.28 | 49.8 / 8.2 MB |
 | N6_mlp_x0.3_120k | shape/flow/opacity MLP LR ×0.3 | G5 38.04 | 37.504 | **-0.53** | 49.8 / 6.9 MB |
+| O2_offset_x10_120k | offset LR 0.01/1e-4 → 0.1/1e-3 | G5 38.04 | 35.778 | **−2.26** | 49.8 / 4.4 MB |
 
 Per group (E, 10-frame means; H4 on the same frames in brackets): E1 32.09
 (39.82), E2 34.91 (39.52), E3 33.81 (39.09), E4 34.76 (39.56), E5 34.83
@@ -59,7 +60,7 @@ was 41.20: its +1.8 dB over H4 is the 9× per-frame compute, not the grouping.
   concurrent runs; rerun alone.
 - **N1–N6 (base LRs, all upstream values until now)**: offset LR is clearly
   too low (×0.3 −1.11, ×3 +0.30); feature LR slightly too high (×0.3
-  +0.47, ×3 0.0); MLP LR ×3 +0.28, ×0.3 −0.53 (so MLP LR also wants to go up). Single effects are 0.3–0.5 dB, at the
+  +0.47, ×3 0.0); MLP LR ×3 +0.28, ×0.3 −0.53 (so MLP LR also wants to go up); offset ×10 (O2) −2.26, so the offset optimum is near ×3. Single effects are 0.3–0.5 dB, at the
   noise level, but consistent in direction. N2 keeps more children alive
   (compact 9.3 MB vs 7–8).
 

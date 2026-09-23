@@ -635,5 +635,17 @@
   "seconds": 1407,
   "steps": 120000,
   "frames": 90
+ },
+ {
+  "run": "next/O2_offset_x10_120k",
+  "psnr": 35.778,
+  "pmin": 33.22,
+  "pmax": 36.32,
+  "anchors": 150000,
+  "children": 10,
+  "mb": 49.83,
+  "seconds": 1786,
+  "steps": 120000,
+  "frames": 90
  }
 ]

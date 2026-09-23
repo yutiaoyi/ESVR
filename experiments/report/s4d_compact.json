@@ -777,5 +777,25 @@
   "psnr_before": 37.504,
   "psnr_after": 37.494,
   "psnr_delta": -0.01
+ },
+ "next/O2_offset_x10_120k": {
+  "run": "output/scaffold4d/next/O2_offset_x10_120k",
+  "anchors_before": 150000,
+  "children_before": 1500000,
+  "anchors_kept": 32117,
+  "children_kept": 190415,
+  "fp16": true,
+  "drop_floor": true,
+  "drop_never_selected": false,
+  "dropped_never_selected": null,
+  "bytes_before": 49828512,
+  "bytes_after": 4354041,
+  "mb_before": 49.83,
+  "mb_after": 4.35,
+  "ratio": 11.44,
+  "file_mb": 4.4,
+  "psnr_before": 35.778,
+  "psnr_after": 35.772,
+  "psnr_delta": -0.006
  }
 }
