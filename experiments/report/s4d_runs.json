@@ -647,5 +647,17 @@
   "seconds": 1786,
   "steps": 120000,
   "frames": 90
+ },
+ {
+  "run": "next/O1_lr_combo_480k",
+  "psnr": 38.415,
+  "pmin": 36.01,
+  "pmax": 39.3,
+  "anchors": 150000,
+  "children": 10,
+  "mb": 49.83,
+  "seconds": 4612,
+  "steps": 480000,
+  "frames": 90
  }
 ]

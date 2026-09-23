@@ -1051,5 +1051,22 @@
   "frames": 90,
   "sigma_at_max": 0.184,
   "halfwidth_frames_p50": 3.17
+ },
+ "next/O1_lr_combo_480k": {
+  "anchors": 150000,
+  "children": 10,
+  "total": 1500000,
+  "active": 88151,
+  "useful_query": 15907,
+  "useful_total": 105771,
+  "useful_query_mean": 14703,
+  "useful_query_min": 10017,
+  "useful_query_max": 16517,
+  "active_query_mean": 88049,
+  "never_selected": 269919,
+  "useful_never_selected": 3181,
+  "frames": 90,
+  "sigma_at_max": 0.293,
+  "halfwidth_frames_p50": 3.96
  }
 }

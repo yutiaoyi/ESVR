@@ -29,6 +29,7 @@ shows those were the dead children, not the useful ones.
 | N5_mlp_x3_120k | shape/flow/opacity MLP LR ×3 | G5 38.04 | 38.324 | +0.28 | 49.8 / 8.2 MB |
 | N6_mlp_x0.3_120k | shape/flow/opacity MLP LR ×0.3 | G5 38.04 | 37.504 | **-0.53** | 49.8 / 6.9 MB |
 | O2_offset_x10_120k | offset LR 0.01/1e-4 → 0.1/1e-3 | G5 38.04 | 35.778 | **−2.26** | 49.8 / 4.4 MB |
+| O1_lr_combo_480k | feature ×0.3 + offset ×3 + MLP ×3 together, 480k steps | H4 39.43 | 38.415 | **−1.02** | 49.8 / 4.8 MB |
 
 Per group (E, 10-frame means; H4 on the same frames in brackets): E1 32.09
 (39.82), E2 34.91 (39.52), E3 33.81 (39.09), E4 34.76 (39.56), E5 34.83
@@ -64,11 +65,18 @@ was 41.20: its +1.8 dB over H4 is the 9× per-frame compute, not the grouping.
   noise level, but consistent in direction. N2 keeps more children alive
   (compact 9.3 MB vs 7–8).
 
+## Verification (O1 / O2)
+
+O2 (offset ×10) −2.26: overshoot, the offset optimum is near ×3. O1 (the
+three positive directions combined, 480k steps) −1.02, and its monitor
+curve sits ~1 dB below H4 from step 20k on (25.7 vs 28.4 at 20k, 36.9 vs
+38.0 at 240k, 37.8 vs 38.9 at 480k): the 120k-step single-variable gains
+neither add up nor transfer to the 480k recipe. The upstream learning
+rates stay; the LR line is closed.
+
 ## Next
 
-O1 = H4 + feature ×0.3 + offset ×3 + MLP ×3 at 480k steps (one run, then
-the three-way split only if it moves ≥ 1 dB); offset ×10 probe. Nothing
-else in this round is worth a second run.
+Nothing in this round is worth a second run.
 
 ## Not done
 
