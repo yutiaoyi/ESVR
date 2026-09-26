@@ -71,7 +71,7 @@ was 41.20: its +1.8 dB over H4 is the 9× per-frame compute, not the grouping.
 |---|---|---|---:|---:|---|
 | Q1_floor_st_480k | H4 recipe on the code with the straight-through scale floor (commit aae731c) | H4 39.43 | 39.094 | −0.34 | 49.8 / 6.0 MB |
 | P1_block128_240k | block 128³, 240k steps (equal wall-clock to H4 by the step profile: 51 vs 30 ms) | H4 39.43 | stopped at 35k steps | — | growth stalled at 14k anchors |
-| P1b_block128_thr3e-4_240k | P1 with growth threshold 1.2e-3 → 3e-4 | H4 39.43 | pending | | |
+| **P1b_block128_thr3e-4_240k** | P1 with growth threshold 1.2e-3 → 3e-4 | H4 39.43 | **40.171** | **+0.74** | **29.0 / 6.8 MB**, 0.75 h, 87,325 anchors |
 
 Q1: the third external review found that `clamp_min` gave zero gradient to
 the 90.9 % of H4's children whose pre-clamp size sits below the 0.5-voxel
@@ -95,6 +95,17 @@ anchors at 35k steps vs 150k for H4. The same confound applies to `fifty/K2`
 the kernel and saves only 3 %: the step cost is the fixed overhead of the
 1.5 M-child population, not voxelization.
 
+P1b: 40.171 dB (min 37.73 / max 41.39) in 2,713 s alone on the GPU, 87k
+anchors (threshold-limited, cap not reached), 29.0 MB trained / 6.8 MB
+compact (40.152), useful children per query 21.6k (H4 16.7k), useful total
+150k (H4 129k). Better than H4 and I3 on PSNR, pre-compaction size and
+training time at once. Whole-volume supervision costs almost nothing per
+step (the step is dominated by the fixed 1.5 M-child overhead), so it gives
+8x the supervised voxels per step for free; the only trap is the growth
+threshold, which must be re-calibrated for the smoother whole-volume
+gradients. `fifty/K2`'s "whole-volume is worse" conclusion is withdrawn
+(equal-voxel-count control and an uncalibrated threshold).
+
 ## Verification (O1 / O2)
 
 O2 (offset ×10) −2.26: overshoot, the offset optimum is near ×3. O1 (the
@@ -106,7 +117,7 @@ rates stay; the LR line is closed.
 
 ## Next
 
-Implement in-training importance pruning (ESVR score: voxel coverage × intensity × fractional anisotropy) with relocation of freed slots to high-residual voxels; that is the common root of size, step time and dead capacity.
+P2 = P1b at 480k steps, P3 = P1b with threshold 1e-4 (more anchors); then implement in-training importance pruning (ESVR score: voxel coverage × intensity × fractional anisotropy) with relocation of freed slots to high-residual voxels; that is the common root of size, step time and dead capacity.
 
 ## Not done
 

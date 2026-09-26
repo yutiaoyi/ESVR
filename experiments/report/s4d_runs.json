@@ -671,5 +671,17 @@
   "seconds": 3443,
   "steps": 480000,
   "frames": 90
+ },
+ {
+  "run": "next/P1b_block128_thr3e-4_240k",
+  "psnr": 40.171,
+  "pmin": 37.73,
+  "pmax": 41.39,
+  "anchors": 87325,
+  "children": 10,
+  "mb": 29.02,
+  "seconds": 2713,
+  "steps": 240000,
+  "frames": 90
  }
 ]
