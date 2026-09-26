@@ -28,8 +28,9 @@ class CompactScaffold(ScaffoldESVR):
         g = generated if generated is not None else self.generate()
         sliced = super().at(timestamp, g)
         keep = self.child_keep.reshape(-1)[sliced.child_index]
-        for name in ("get_xyz", "get_scaling", "get_rotation", "get_opacity", "opacity_t", "sigma", "child_index"):
-            setattr(sliced, name, getattr(sliced, name)[keep])
+        for name in ("get_xyz", "get_scaling", "get_rotation", "get_opacity", "opacity_t", "sigma", "child_index", "get_value"):
+            if getattr(sliced, name, None) is not None:
+                setattr(sliced, name, getattr(sliced, name)[keep])
         return sliced
 
 

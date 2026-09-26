@@ -129,6 +129,11 @@ def main():
                    help="Initial final-scale of children in voxels for initial and grown anchors (native: anchor's own cell size)")
     p.add_argument("--block", type=int, default=64)
     p.add_argument("--tile-sampling", action="store_true", help="ESVR-only spatial sampling; no native equivalent (upstream samples camera rays)")
+    p.add_argument("--composition", choices=("additive", "normalized"), default="additive",
+                   help="How children combine into a voxel value. additive = ESVR's sum (default, native). normalized = weighted average "
+                        "sum(w g K s) / max(sum(w g K), eps) (Martin et al. 2026, arXiv 2609.16024): the opacity head gives the weight w, "
+                        "an extra value head the local value s. Single-frame test: +12.9 dB at 32k primitives (experiments/static_normalized.py)")
+    p.add_argument("--norm-eps", type=float, default=0.05, help="Denominator floor of the normalized composition (in weight units)")
     p.add_argument("--grow-residual", type=int, default=0,
                    help="Residual-driven growing: at every anchor adjustment also add up to N anchors at the voxels with the largest "
                         "|prediction - target| of the last trained block (finest cell, empty cells only, feature from the nearest anchor). "
@@ -252,7 +257,8 @@ def main():
                              temporal_cutoff=args.temporal_cutoff, flow_scale=args.flow_scale,
                              scale_floor=args.scale_floor_voxels * voxel, opacity_init=args.opacity_init,
                              anchor_init=anchor_init, anchor_scale=anchor_scale, sigma_max=args.sigma_max, offset_spread=args.offset_spread,
-                             opacity_activation=args.opacity_activation,
+                             opacity_activation=args.opacity_activation, composition=args.composition, norm_eps=args.norm_eps,
+                             value_init=float(min(max(torch.stack([sequence.volumes[i].mean() for i in sequence.train_indices]).mean().item(), 1e-3), 1 - 1e-3)),
                              child_scale_init=None if args.child_scale_init_voxels is None else args.child_scale_init_voxels * voxel).cuda()
         if args.init == "random" and (train_times[0] > 0 or train_times[-1] < 1):
             # Random anchor times are meant to be uniform over the trained

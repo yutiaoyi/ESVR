@@ -287,6 +287,26 @@ class Mathematics(unittest.TestCase):
 
 @unittest.skipUnless(torch.cuda.is_available(), "CUDA voxelizer requires GPU")
 class CUDA(unittest.TestCase):
+    def test_normalized_composition_reproduces_a_constant_field(self):
+        # With every child's value equal to c, the weighted average is c wherever
+        # the weights cover the voxel -- independent of how many children overlap.
+        torch.manual_seed(0)
+        model = ScaffoldESVR(anchors=40, children=3, shape=(16, 16, 16), temporal_cutoff=0.0, composition="normalized", value_init=0.37).cuda()
+        with torch.no_grad():
+            model.anchor[:, :3].uniform_(-0.8, 0.8)
+            model.log_offset_scale[:, 4:7] = math.log(0.4)
+            model.heads["value"][-1].weight.zero_()   # every slot outputs sigmoid(bias) = value_init
+        pkg, _ = query_block(model, 0.5, (16, 16, 16), (0, 0, 0), (16, 16, 16), return_package=True)
+        covered = pkg["den"] > model.config["norm_eps"] * model.config["norm_C"]
+        self.assertGreater(int(covered.sum()), 100)
+        torch.testing.assert_close(pkg["vol"][covered], torch.full_like(pkg["vol"][covered], 0.37), atol=1e-4, rtol=0)
+        # gradients reach positions, weights and values
+        loss = (pkg["vol"] - 0.5).abs().mean()
+        loss.backward()
+        self.assertTrue(model.heads["value"][-1].weight.grad.abs().sum() > 0)
+        self.assertTrue(model.heads["opacity"][-1].weight.grad is not None)
+        self.assertTrue(model.offset.grad.abs().sum() > 0)
+
     def test_count_children_matches_voxel_contribution(self):
         from scaffold4d.model import count_children
         torch.manual_seed(1)

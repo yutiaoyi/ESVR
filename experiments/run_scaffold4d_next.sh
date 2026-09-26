@@ -51,6 +51,9 @@ case "$1" in
   # On the P1b recipe (block 128, thr 3e-4, 240k): residual-driven growing; ESVR score pruning with regrowth.
   R1) run R1_block128_resid200_240k --manifest experiments/vorts_90_all_train.json --steps 240000 --max-anchors 150000 --block 128 --densify-grad-threshold 3e-4 --grow-residual 200 ;;
   S1) run S1_block128_scoreprune_240k --manifest experiments/vorts_90_all_train.json --steps 240000 --max-anchors 150000 --block 128 --densify-grad-threshold 3e-4 --prune-score-ratio 0.3 --prune-score-at 40000,80000 ;;
+  # Normalized composition on the P3 recipe (block 128, thr 1e-4, 240k steps, cap 150k); single variable vs P3; W2 also --init data.
+  W1) run W1_P3_normalized_240k --manifest experiments/vorts_90_all_train.json --steps 240000 --max-anchors 150000 --block 128 --densify-grad-threshold 1e-4 --composition normalized ;;
+  W2) run W2_P3_normalized_initdata_240k --manifest experiments/vorts_90_all_train.json --steps 240000 --max-anchors 150000 --block 128 --densify-grad-threshold 1e-4 --composition normalized --init data ;;
   NA) G5="--manifest experiments/vorts_90_all_train.json --steps 120000 --max-anchors 150000 --eval-every 10000"
       run N1_feat_x3_120k   $G5 --feat-lr 0.0225
       run N3_offset_x3_120k $G5 --offset-lr-init 0.03 --offset-lr-final 0.0003

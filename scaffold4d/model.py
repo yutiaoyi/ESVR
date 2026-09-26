@@ -83,7 +83,8 @@ class ScaffoldESVR(nn.Module):
     def __init__(self, anchors=5000, children=5, shape=(128, 128, 128), feat_dim=32,
                  hidden=32, temporal_beta=4.0, temporal_cutoff=1e-3, flow_scale=1.0,
                  scale_floor=1e-4, opacity_init=0.5, anchor_init=None, sigma_max=1e2,
-                 offset_spread=0.0, child_scale_init=None, anchor_scale=None, opacity_activation="sigmoid"):
+                 offset_spread=0.0, child_scale_init=None, anchor_scale=None, opacity_activation="sigmoid",
+                 composition="additive", norm_eps=0.05, norm_C=100.0, value_init=0.2):
         super().__init__()
         if anchors < 1 or children < 1 or len(shape) != 3 or min(shape) < 1:
             raise ValueError("Invalid anchor/children count or XYZ shape")
@@ -95,6 +96,8 @@ class ScaffoldESVR(nn.Module):
             raise ValueError("Invalid sigma_max, offset_spread or child_scale_init")
         if opacity_activation not in ("sigmoid", "tanh"):
             raise ValueError("opacity_activation must be sigmoid or tanh")
+        if composition not in ("additive", "normalized") or norm_eps <= 0 or norm_C <= 0 or not 0 < value_init < 1:
+            raise ValueError("composition must be additive or normalized; norm_eps, norm_C > 0; 0 < value_init < 1")
         if anchor_init is not None:
             anchors = len(anchor_init)
         self.config = dict(anchors=anchors, children=children, shape=list(shape),
@@ -102,7 +105,8 @@ class ScaffoldESVR(nn.Module):
                            temporal_cutoff=temporal_cutoff, flow_scale=flow_scale,
                            scale_floor=scale_floor, opacity_init=opacity_init, sigma_max=sigma_max,
                            offset_spread=offset_spread, child_scale_init=child_scale_init,
-                           opacity_activation=opacity_activation)
+                           opacity_activation=opacity_activation, composition=composition, norm_eps=norm_eps,
+                           norm_C=norm_C, value_init=value_init)
         extent = torch.tensor(shape) / max(shape)
         if anchor_init is None:
             anchor_init = torch.cat([(torch.rand(anchors, 3) * 2 - 1) * extent, torch.rand(anchors, 1)], -1)
@@ -136,6 +140,11 @@ class ScaffoldESVR(nn.Module):
             "flow": nn.Sequential(nn.Linear(feat_dim, hidden), nn.ReLU(True),
                                   nn.Linear(hidden, children * 3), nn.Tanh()),
         })
+        if composition == "normalized":
+            # Normalized kernel regression (Martin et al. 2026, arXiv 2609.16024;
+            # Image-GS): V = sum w g K s / max(sum w g K, eps). The opacity head
+            # becomes the weight w, this head the child's local value s.
+            self.heads["value"] = nn.Sequential(nn.Linear(feat_dim, hidden), nn.ReLU(True), nn.Linear(hidden, children))
         with torch.no_grad():
             # ESVR sums contributions instead of alpha-compositing, so the
             # initial per-child amplitude sets the initial over-prediction
@@ -145,6 +154,8 @@ class ScaffoldESVR(nn.Module):
             # dead zone. Both start every child at intensity opacity_init.
             self.heads["opacity"][-1].bias.fill_(
                 inverse_sigmoid(opacity_init) if opacity_activation == "sigmoid" else math.atanh(opacity_init))
+            if composition == "normalized":
+                self.heads["value"][-1].bias.fill_(inverse_sigmoid(value_init))
         n = anchors * children
         self.register_buffer("child_grad_accum", torch.zeros(n), persistent=False)
         self.register_buffer("child_denom", torch.zeros(n), persistent=False)
@@ -221,8 +232,9 @@ class ScaffoldESVR(nn.Module):
         # Numerical guardrail: sigma is raised to the 4th power downstream.
         sigma = (F.elu(shape_out[..., 3:4]) + 1).clamp(1e-2, self.config["sigma_max"])
         intensity = opacity_raw.sigmoid() if self.config.get("opacity_activation", "sigmoid") == "sigmoid" else opacity_raw.tanh()
+        value = self.heads["value"](self.anchor_feat).view(n, k, 1).sigmoid() if "value" in self.heads else None
         return SimpleNamespace(opacity_raw=opacity_raw, intensity=intensity, home_xyz=home_xyz, home_t=home_t,
-                               scale=scale, rotation=rotation, sigma=sigma, flow=flow)
+                               scale=scale, rotation=rotation, sigma=sigma, flow=flow, value=value)
 
     def at(self, timestamp, generated=None):
         g = generated if generated is not None else self.generate()
@@ -247,6 +259,7 @@ class ScaffoldESVR(nn.Module):
             get_xyz=selected_xyz, get_scaling=flat(g.scale), get_rotation=flat(g.rotation),
             get_opacity=flat(opacity), mask=mask, opacity_t=flat(opacity_t), sigma=flat(g.sigma),
             child_index=flat_mask.nonzero().flatten(),
+            get_value=flat(g.value) if getattr(g, "value", None) is not None else None,
             anchor_opacity_sum=opacity_base.detach().clamp_min(0).sum((1, 2)))
 
     @torch.no_grad()
@@ -476,10 +489,22 @@ def query_block(model, timestamp, shape, start, size, return_package=False):
     step = 2 / max(shape)
     center = [(a + n / 2 - s / 2) * step for a, n, s in zip(start, size, shape)]
     sliced = model.at(timestamp)
+    pipe = SimpleNamespace(compute_cov3D_python=False, debug=False)
     if not len(sliced.get_xyz):
         vol = model.anchor.sum() * 0 + model.anchor.new_zeros(size)
         package = dict(vol=vol, visibility_filter=torch.zeros(0, dtype=torch.bool, device=vol.device))
+    elif getattr(sliced, "get_value", None) is not None:
+        # Normalized composition: the voxelizer is linear in the amplitude, so
+        # numerator (C w g s) and denominator (C w g) are two calls; C scales both
+        # so the kernel's per-voxel alpha < 1/255 skip is negligible and cancels.
+        C, eps = model.config.get("norm_C", 100.0), model.config.get("norm_eps", 0.05)
+        weight = sliced.get_opacity * C
+        common = dict(get_xyz=sliced.get_xyz, get_scaling=sliced.get_scaling, get_rotation=sliced.get_rotation)
+        num = query(SimpleNamespace(**common, get_opacity=weight * sliced.get_value), center, size, [s * step for s in size], pipe)
+        den = query(SimpleNamespace(**common, get_opacity=weight), center, size, [s * step for s in size], pipe)
+        package = dict(num)
+        package["vol"] = (num["vol"] / den["vol"].clamp_min(eps * C)).clamp(0, 1)
+        package["den"] = den["vol"]
     else:
-        package = query(sliced, center, size, [s * step for s in size],
-                        SimpleNamespace(compute_cov3D_python=False, debug=False))
+        package = query(sliced, center, size, [s * step for s in size], pipe)
     return (package, sliced) if return_package else package["vol"]
