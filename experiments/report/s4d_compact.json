@@ -917,5 +917,25 @@
   "psnr_before": 40.498,
   "psnr_after": 40.468,
   "psnr_delta": -0.03
+ },
+ "next/S1_block128_scoreprune_240k": {
+  "run": "output/scaffold4d/next/S1_block128_scoreprune_240k",
+  "anchors_before": 53706,
+  "children_before": 537060,
+  "anchors_kept": 52250,
+  "children_kept": 132769,
+  "fp16": true,
+  "drop_floor": true,
+  "drop_never_selected": false,
+  "dropped_never_selected": null,
+  "bytes_before": 17858904,
+  "bytes_after": 5649477,
+  "mb_before": 17.86,
+  "mb_after": 5.65,
+  "ratio": 3.16,
+  "file_mb": 5.68,
+  "psnr_before": 39.869,
+  "psnr_after": 39.853,
+  "psnr_delta": -0.016
  }
 }

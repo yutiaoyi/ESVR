@@ -719,5 +719,17 @@
   "seconds": 17998,
   "steps": 480000,
   "frames": 90
+ },
+ {
+  "run": "next/S1_block128_scoreprune_240k",
+  "psnr": 39.869,
+  "pmin": 37.66,
+  "pmax": 40.85,
+  "anchors": 53706,
+  "children": 10,
+  "mb": 17.86,
+  "seconds": 5878,
+  "steps": 240000,
+  "frames": 90
  }
 ]

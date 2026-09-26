@@ -1153,5 +1153,22 @@
   "frames": 90,
   "sigma_at_max": 0.271,
   "halfwidth_frames_p50": 3.18
+ },
+ "next/S1_block128_scoreprune_240k": {
+  "anchors": 53706,
+  "children": 10,
+  "total": 537060,
+  "active": 35923,
+  "useful_query": 19405,
+  "useful_total": 132769,
+  "useful_query_mean": 17850,
+  "useful_query_min": 11522,
+  "useful_query_max": 19837,
+  "active_query_mean": 35823,
+  "never_selected": 79206,
+  "useful_never_selected": 1284,
+  "frames": 90,
+  "sigma_at_max": 0.271,
+  "halfwidth_frames_p50": 3.47
  }
 }

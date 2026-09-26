@@ -75,7 +75,7 @@ was 41.20: its +1.8 dB over H4 is the 9× per-frame compute, not the grouping.
 | **P3_block128_thr1e-4_240k** | P1b with growth threshold 1e-4 (cap 150k filled) | P1b 40.17 | **40.585** | **+0.41** | 49.8 / 10.5 MB, 3.3 h (3 concurrent runs), 150,000 anchors, useful/query 26.8k |
 | P2_block128_thr3e-4_480k | P1b at 480k steps | P1b 40.17 | 40.498 | +0.33 | 34.4 / 7.7 MB; 103k anchors; 5.0 h with 4 concurrent runs |
 | R1_block128_resid200_240k | P1b + `--grow-residual 200` | P1b 40.17 | 40.257 | +0.09 | 49.8 / 8.7 MB; 150k anchors (cap filled by 60k steps, 76k of 155k newborns from residual candidates); below P3 at equal anchors |
-| S1_block128_scoreprune_240k | P1b + `--prune-score-ratio 0.3 --prune-score-at 40000,80000` | P1b 40.17 | pending | | |
+| S1_block128_scoreprune_240k | P1b + `--prune-score-ratio 0.3 --prune-score-at 40000,80000` | P1b 40.17 | 39.869 | −0.30 | **17.9** / 5.65 MB; 53.7k anchors (24.6k + 20.4k pruned, only 12 + 5 regrown) |
 
 Q1: the third external review found that `clamp_min` gave zero gradient to
 the 90.9 % of H4's children whose pre-clamp size sits below the 0.5-voxel
@@ -109,6 +109,14 @@ step (the step is dominated by the fixed 1.5 M-child overhead), so it gives
 threshold, which must be re-calibrated for the smoother whole-volume
 gradients. `fifty/K2`'s "whole-volume is worse" conclusion is withdrawn
 (equal-voxel-count control and an uncalibrated threshold).
+
+Summary of the block-128 variants: more steps +0.33 (P2), lower threshold
++0.41 (P3, cap filled), residual growing +0.09 (R1, cap filled, below P3 at
+equal anchors), score pruning −0.30 but 17.9 MB trained (S1: the pruned
+regions did not regrow because their gradients stay below the threshold,
+so ESVR's prune-then-redensify gain did not materialise). Nothing buys PSNR
+at equal size; the size/PSNR trade is monotone. Best PSNR: P3 40.59; best
+pre-compaction size: S1 39.87 at 17.9 MB.
 
 ## Verification (O1 / O2)
 
