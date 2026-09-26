@@ -695,5 +695,17 @@
   "seconds": 11834,
   "steps": 240000,
   "frames": 90
+ },
+ {
+  "run": "next/R1_block128_resid200_240k",
+  "psnr": 40.257,
+  "pmin": 37.83,
+  "pmax": 41.34,
+  "anchors": 150000,
+  "children": 10,
+  "mb": 49.83,
+  "seconds": 10713,
+  "steps": 240000,
+  "frames": 90
  }
 ]

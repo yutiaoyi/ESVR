@@ -74,7 +74,7 @@ was 41.20: its +1.8 dB over H4 is the 9× per-frame compute, not the grouping.
 | **P1b_block128_thr3e-4_240k** | P1 with growth threshold 1.2e-3 → 3e-4 | H4 39.43 | **40.171** | **+0.74** | **29.0 / 6.8 MB**, 0.75 h, 87,325 anchors |
 | **P3_block128_thr1e-4_240k** | P1b with growth threshold 1e-4 (cap 150k filled) | P1b 40.17 | **40.585** | **+0.41** | 49.8 / 10.5 MB, 3.3 h (3 concurrent runs), 150,000 anchors, useful/query 26.8k |
 | P2_block128_thr3e-4_480k | P1b at 480k steps | P1b 40.17 | pending | | |
-| R1_block128_resid200_240k | P1b + `--grow-residual 200` | P1b 40.17 | pending | | |
+| R1_block128_resid200_240k | P1b + `--grow-residual 200` | P1b 40.17 | 40.257 | +0.09 | 49.8 / 8.7 MB; 150k anchors (cap filled by 60k steps, 76k of 155k newborns from residual candidates); below P3 at equal anchors |
 | S1_block128_scoreprune_240k | P1b + `--prune-score-ratio 0.3 --prune-score-at 40000,80000` | P1b 40.17 | pending | | |
 
 Q1: the third external review found that `clamp_min` gave zero gradient to

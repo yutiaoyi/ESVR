@@ -388,7 +388,8 @@ NEXT.append(("<b>P1b_block128_thr3e-4_240k</b>", "同 P1,生长阈值 1.2e-3 →
 NEXT.append(("<b>P3_block128_thr1e-4_240k</b>", "P1b + 生长阈值 3e-4 → 1e-4(锚点长满 150k 上限)", "final", "当前结论",
              "<b>40.59</b>(+0.41 vs P1b),最高帧 41.61;每次查询有用孩子 2.68 万(P1b 2.16 万),有用总数 18.2 万。代价:训练大小回到 50 MB(压缩后 10.5 MB / 40.56),三组并行时 3.3 小时。PSNR 与预算的交换关系仍在:阈值越低、锚点越多、PSNR 越高。", True))
 NEXT.append(("P2_block128_thr3e-4_480k", "P1b + 480k 步", "final", "进行中", "", False))
-NEXT.append(("R1_block128_resid200_240k", "P1b + <code>--grow-residual 200</code>:每次锚点检查在残差最大的体素处再加 ≤200 个锚点(最细格、只放空格、特征取最近锚点)", "final", "进行中", "", False))
+NEXT.append(("R1_block128_resid200_240k", "P1b + <code>--grow-residual 200</code>:每次锚点检查在残差最大的体素处再加 ≤200 个锚点(最细格、只放空格、特征取最近锚点)", "neg", "负面记录",
+             "<b>40.26</b>(+0.09 vs P1b,噪声内)。残差候选贡献了新生锚点的一半(7.6 万 / 15.5 万),锚点在 60k 步就长满 150k 上限——但同样 15 万锚点的 P3 是 40.59,即残差驱动的锚点位置<b>不比</b>梯度驱动的好,每次查询有用孩子 2.59 万(P3 2.68 万)。压缩后 8.7 MB / 40.22。W-VEG 报告的增益没有在锚点模型上复现:新锚点的孩子由最近锚点的特征解码,并不落在残差体素上。", False))
 NEXT.append(("S1_block128_scoreprune_240k", "P1b + <code>--prune-score-ratio 0.3 --prune-score-at 40000,80000</code>:ESVR 分数(体素覆盖 × 强度 × 各向异性)删最低 30% 的锚点并重新生长", "final", "进行中", "", False))
 for name, what, kind, tag, note, best in NEXT:
     run = "next/" + name.replace("<b>", "").replace("</b>", "")
