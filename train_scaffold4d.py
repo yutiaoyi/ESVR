@@ -15,7 +15,7 @@ import numpy as np
 import torch
 
 from dynamic_esvr.data import VolumeSequence
-from scaffold4d.model import ScaffoldESVR, anchors_from_sequence, count_children, query_block
+from scaffold4d.model import ScaffoldESVR, anchors_from_sequence, count_children, query_block, voxel_centers
 from scaffold4d.sampling import ErrorTable
 
 
@@ -129,6 +129,14 @@ def main():
                    help="Initial final-scale of children in voxels for initial and grown anchors (native: anchor's own cell size)")
     p.add_argument("--block", type=int, default=64)
     p.add_argument("--tile-sampling", action="store_true", help="ESVR-only spatial sampling; no native equivalent (upstream samples camera rays)")
+    p.add_argument("--grow-residual", type=int, default=0,
+                   help="Residual-driven growing: at every anchor adjustment also add up to N anchors at the voxels with the largest "
+                        "|prediction - target| of the last trained block (finest cell, empty cells only, feature from the nearest anchor). "
+                        "0 = off (native growing only). From W-VEG (arXiv 2607.01164); no upstream equivalent.")
+    p.add_argument("--prune-score-ratio", type=float, default=0.0,
+                   help="ESVR structure-aware importance pruning ported to anchors: at the steps in --prune-score-at remove this fraction "
+                        "of the checked anchors with the lowest sum over children of coverage * intensity * fractional anisotropy. 0 = off.")
+    p.add_argument("--prune-score-at", default="", help="Comma-separated steps (multiples of --densify-every) at which --prune-score-ratio applies")
     p.add_argument("--error-sampling", type=float, default=0.0,
                    help="Sample (frame, tile) with probability proportional to last-seen block MSE ** this exponent, mixed with a uniform share "
                         "(--error-sampling-uniform). 0 = off (uniform, the ESVR default); requires --tile-sampling. No native equivalent.")
@@ -182,6 +190,9 @@ def main():
         args.densify_until = args.steps // 2
     if args.error_sampling < 0 or not 0 < args.error_sampling_uniform <= 1:
         p.error("--error-sampling must be >= 0 and 0 < --error-sampling-uniform <= 1")
+    prune_score_steps = {int(x) for x in args.prune_score_at.split(",") if x.strip()}
+    if not 0 <= args.prune_score_ratio < 1 or args.grow_residual < 0 or (args.prune_score_ratio and not prune_score_steps):
+        p.error("--prune-score-ratio needs 0 <= ratio < 1 and --prune-score-at; --grow-residual must be >= 0")
     if args.error_sampling and not args.tile_sampling:
         p.error("--error-sampling needs --tile-sampling (the error table is per tile)")
     if args.steps < 1 or args.block < 1 or not 0 <= args.lambda_ssim <= 1:
@@ -355,7 +366,7 @@ def main():
             if args.start_stat < step < args.densify_until and len(sliced.get_xyz):
                 # --prune-dead judges "covered no voxel" with the voxelizer's
                 # count kernel (ESVR prune_zeros), not the gradient proxy.
-                counts = count_children(sliced, sequence.shape, start, size) if args.prune_dead else None
+                counts = count_children(sliced, sequence.shape, start, size) if (args.prune_dead or args.prune_score_ratio) else None
                 model.record_statistics(sliced, package["visibility_filter"], args.lambda_temporal_sigma, voxel_counts=counts)
             if args.clip_grad:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip_grad, error_if_nonfinite=True)
@@ -369,7 +380,17 @@ def main():
                 # block contains it, so the "observed enough" interval is
                 # scaled by the block's share of the volume.
                 block_fraction = math.prod(min(args.block, s) / s for s in sequence.shape)
+                residual4d = residual_weight = None
+                if args.grow_residual:
+                    res = (pred.detach() - target).abs().flatten()
+                    top = res.topk(min(4 * args.grow_residual, res.numel()))
+                    idx = torch.stack(torch.unravel_index(top.indices, tuple(size)), 1) + torch.tensor(start, device=res.device)
+                    xyz = voxel_centers(sequence.shape, idx).float()
+                    residual4d = torch.cat([xyz, torch.full((len(xyz), 1), float(t), device=xyz.device)], 1)
+                    residual_weight = top.values
                 event = model.adjust_anchors(optimizer, check_interval=args.densify_every * block_fraction,
+                    score_prune_ratio=args.prune_score_ratio if step in prune_score_steps else 0.0,
+                    residual4d=residual4d, residual_weight=residual_weight, residual_budget=args.grow_residual,
                     success_threshold=args.success_threshold, grad_threshold=args.densify_grad_threshold,
                     min_opacity=args.min_opacity, voxel_size=grow_voxel_size, t_size=grow_t_size,
                     init_factor=args.grow_init_factor, hierarchy_factor=args.grow_hierarchy_factor,

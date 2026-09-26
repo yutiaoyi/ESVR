@@ -157,10 +157,13 @@ class ScaffoldESVR(nn.Module):
         # support would be misjudged by the fallback; see docs).
         self.register_buffer("child_seen", torch.zeros(n), persistent=False)
         self.register_buffer("child_effective", torch.zeros(n), persistent=False)
+        # ESVR importance score input: voxels written per child, summed over
+        # the window (count kernel; only filled when voxel_counts are given).
+        self.register_buffer("child_coverage", torch.zeros(n), persistent=False)
         self.register_buffer("anchor_opacity_accum", torch.zeros(anchors), persistent=False)
         self.register_buffer("anchor_denom", torch.zeros(anchors), persistent=False)
 
-    statistic_buffers = ("child_grad_accum", "child_denom", "child_seen", "child_effective")
+    statistic_buffers = ("child_grad_accum", "child_denom", "child_seen", "child_effective", "child_coverage")
     anchor_statistic_buffers = ("anchor_opacity_accum", "anchor_denom")
 
     def statistics_state(self):
@@ -172,6 +175,9 @@ class ScaffoldESVR(nn.Module):
     def load_statistics_state(self, state):
         for name in self.statistic_buffers + self.anchor_statistic_buffers:
             target = getattr(self, name)
+            if name not in state:      # checkpoints written before a buffer existed
+                target.zero_()
+                continue
             value = state[name].to(target)
             if value.shape != target.shape:
                 raise ValueError(f"Statistics {name} has shape {tuple(value.shape)}, model expects {tuple(target.shape)}")
@@ -269,6 +275,8 @@ class ScaffoldESVR(nn.Module):
         self.child_seen.index_add_(0, index, torch.ones_like(grad))
         effective = (voxel_counts[visibility] > 0) if voxel_counts is not None else (grad > 0)
         self.child_effective.index_add_(0, index, effective.float())
+        if voxel_counts is not None:
+            self.child_coverage.index_add_(0, index, voxel_counts[visibility].float())
 
     population_params = ("anchor", "anchor_feat", "offset", "log_offset_scale")
 
@@ -300,7 +308,8 @@ class ScaffoldESVR(nn.Module):
     def adjust_anchors(self, optimizer, check_interval=100, success_threshold=0.8, grad_threshold=2e-4,
                        min_opacity=0.005, voxel_size=2 / 128, t_size=1 / 89, init_factor=16,
                        hierarchy_factor=4, depth=3, max_anchors=40000, partial=True, prune_dead=False,
-                       dark=1 / 255, upstream_level_skip=False):
+                       dark=1 / 255, upstream_level_skip=False, score_prune_ratio=0.0,
+                       residual4d=None, residual_weight=None, residual_budget=0):
         """Upstream adjust_anchor: multi-level voxel-grid anchor growing from
         sufficiently observed, high-gradient children, then pruning of anchors
         whose children stayed near-transparent. With prune_dead, ESVR's
@@ -326,6 +335,22 @@ class ScaffoldESVR(nn.Module):
             dead = useless.all(1) & judged.any(1) & checked
             dead_count = int((dead & ~prune).sum())
             prune |= dead
+        score_count = 0
+        if score_prune_ratio > 0:
+            # ESVR structure-aware pruning, ported to anchors: score_i =
+            # |Omega_i| * I_i * FA_i per child (voxel coverage this window,
+            # intensity, fractional anisotropy of the covariance eigenvalues),
+            # summed over the anchor's children; the lowest `ratio` of the
+            # checked anchors is removed and the freed budget regrown.
+            lam = g.scale.square()                                            # eigenvalues of the covariance
+            mean = lam.mean(-1, keepdim=True)
+            fa = ((1.5 * (lam - mean).square().sum(-1)) / lam.square().sum(-1).clamp_min(1e-30)).sqrt()
+            score = (self.child_coverage.view(n, k) * g.intensity[..., 0].clamp_min(0) * fa).sum(1)
+            pool = (checked & ~prune).nonzero().flatten()
+            if len(pool):
+                drop = pool[score[pool].argsort()[:int(len(pool) * score_prune_ratio)]]
+                score_count = int(len(drop))
+                prune[drop] = True
         child4d = torch.cat([g.home_xyz, g.home_t], -1).reshape(-1, 4)
         child_feat = self.anchor_feat.repeat_interleave(k, 0)
         new = dict(anchor=[], anchor_feat=[], offset=[], log_offset_scale=[])
@@ -374,6 +399,37 @@ class ScaffoldESVR(nn.Module):
             new["log_offset_scale"].append(torch.tensor(
                 [math.log(size)] * 3 + [math.log(t_size)] + [math.log(child)] * 3, device=cells.device).expand(m, 7).contiguous())
             added += m
+        residual_added = 0
+        if residual4d is not None and residual_budget > 0 and budget - added > 0 and len(residual4d):
+            # Residual-driven growing (W-VEG style): candidates at the voxels
+            # with the largest |prediction - target| of the last trained block,
+            # at that block's time; finest cell, empty cells only, ranked by
+            # residual; feature copied from the nearest existing anchor.
+            size = voxel_size * (init_factor // hierarchy_factor ** (depth - 1))
+            existing = torch.cat([self.anchor] + new["anchor"]) if new["anchor"] else self.anchor
+            existing_cells = self._grid(existing, size, t_size)
+            cand_cells = self._grid(residual4d, size, t_size)
+            cells, inverse = torch.unique(torch.cat([existing_cells, cand_cells]), dim=0, return_inverse=True)
+            occupied = torch.zeros(len(cells), dtype=torch.bool, device=cells.device)
+            occupied[inverse[:len(existing_cells)]] = True
+            cell_of = inverse[len(existing_cells):]
+            vote = torch.zeros(len(cells), device=cells.device).scatter_reduce_(0, cell_of, residual_weight.float(), "amax", include_self=False)
+            order = (~occupied).nonzero().flatten()
+            order = order[vote[order].argsort(descending=True)[:min(residual_budget, budget - added)]]
+            if len(order):
+                pos = torch.cat([cells[order, :3].float() * size, cells[order, 3:4].float() * t_size], 1)
+                feat = torch.empty(len(order), self.anchor_feat.shape[1], device=pos.device)
+                for i0 in range(0, len(order), 1024):    # nearest anchor in 4D, chunked
+                    d = torch.cdist(pos[i0:i0 + 1024], self.anchor)
+                    feat[i0:i0 + 1024] = self.anchor_feat[d.argmin(1)]
+                child = size if self.config["child_scale_init"] is None else self.config["child_scale_init"]
+                new["anchor"].append(pos)
+                new["anchor_feat"].append(feat)
+                new["offset"].append(self._initial_offsets(len(order), pos.device))
+                new["log_offset_scale"].append(torch.tensor(
+                    [math.log(size)] * 3 + [math.log(t_size)] + [math.log(child)] * 3, device=pos.device).expand(len(order), 7).contiguous())
+                residual_added = len(order)
+                added += residual_added
         extra = {name: (torch.cat(v) if v else getattr(self, name)[:0]) for name, v in new.items()}
         keep = ~prune
         # Upstream resets the statistics only of children/anchors that were
@@ -383,6 +439,7 @@ class ScaffoldESVR(nn.Module):
         checked_children = checked.repeat_interleave(k)
         self.child_seen[checked_children] = 0
         self.child_effective[checked_children] = 0
+        self.child_coverage[checked_children] = 0
         self.anchor_opacity_accum[checked] = 0
         self.anchor_denom[checked] = 0
         child_keep = keep.repeat_interleave(k)
@@ -392,7 +449,8 @@ class ScaffoldESVR(nn.Module):
         self.anchor_opacity_accum = torch.cat([self.anchor_opacity_accum[keep], self.anchor_opacity_accum.new_zeros(added)])
         self.anchor_denom = torch.cat([self.anchor_denom[keep], self.anchor_denom.new_zeros(added)])
         self.replace_population(optimizer, keep, extra)
-        return dict(before=n, after=len(self.anchor), grown=added, pruned=int(prune.sum()), pruned_dead=dead_count,
+        return dict(before=n, after=len(self.anchor), grown=added, grown_residual=residual_added, pruned=int(prune.sum()),
+                    pruned_dead=dead_count, pruned_score=score_count,
                     observed_children=int(observed.sum()), grad_p50=float(grads[observed].median()) if observed.any() else 0.0,
                     grad_p90=float(grads[observed].quantile(0.9)) if observed.any() else 0.0)
 

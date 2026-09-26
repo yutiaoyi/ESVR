@@ -241,6 +241,41 @@ class Mathematics(unittest.TestCase):
         self.assertTrue((model.log_offset_scale.grad[:, 4:7] != 0).all())
         self.assertTrue(any(p.grad is not None and p.grad.abs().sum() > 0 for p in model.heads["shape"].parameters()))
 
+    def test_residual_growth_adds_anchors_in_empty_cells_with_nearest_feature(self):
+        model = ScaffoldESVR(anchors=3, children=2, shape=(16, 16, 16), temporal_cutoff=0.0)
+        with torch.no_grad():
+            model.anchor[:, :3] = torch.tensor([[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5], [0.0, 0.0, 0.0]])
+            model.anchor[:, 3] = torch.tensor([0.1, 0.9, 0.5])
+            model.anchor_feat[:] = torch.arange(3.0)[:, None]
+        optimizer = torch.optim.Adam([{"params": [getattr(model, n)]} for n in model.population_params], lr=1e-3)
+        voxel = 2 / 16
+        # Two candidates: one on an occupied cell (anchor 1's cell), one in an empty cell near anchor 0.
+        residual4d = torch.tensor([[0.5, 0.5, 0.5, 0.9], [-0.5, -0.5, -0.5 + 4 * voxel, 0.1]])
+        weight = torch.tensor([1.0, 0.5])
+        event = model.adjust_anchors(optimizer, check_interval=100, grad_threshold=1e9, max_anchors=10, voxel_size=voxel, t_size=0.1,
+                                     init_factor=16, hierarchy_factor=4, depth=3, partial=False,
+                                     residual4d=residual4d, residual_weight=weight, residual_budget=5)
+        self.assertEqual(event["grown_residual"], 1)
+        self.assertEqual(len(model.anchor), 4)
+        torch.testing.assert_close(model.anchor_feat[3], model.anchor_feat[0])   # nearest anchor's feature
+        self.assertTrue(((model.anchor[3, :3] - residual4d[1, :3]).abs() <= voxel).all())
+        self.assertAlmostEqual(float(model.anchor[3, 3]), 0.1, places=5)
+
+    def test_score_pruning_removes_lowest_scored_checked_anchors(self):
+        model = ScaffoldESVR(anchors=10, children=2, shape=(8, 8, 8), temporal_cutoff=0.0)
+        optimizer = torch.optim.Adam([{"params": [getattr(model, n)]} for n in model.population_params], lr=1e-3)
+        with torch.no_grad():
+            model.anchor_denom[:] = 1000          # every anchor checked
+            model.anchor_opacity_accum[:] = 1000  # nobody fails min_opacity
+            cov = torch.zeros(20)
+            cov[::2] = torch.arange(10.0) + 1     # anchor i has coverage i+1 on its first child
+            model.child_coverage[:] = cov
+        event = model.adjust_anchors(optimizer, check_interval=100, grad_threshold=1e9, max_anchors=10, partial=False, score_prune_ratio=0.3)
+        self.assertEqual(event["pruned_score"], 3)
+        self.assertEqual(len(model.anchor), 7)
+        # Without coverage statistics the score is zero for all and nothing is removed twice
+        self.assertTrue((model.child_coverage == 0).all())
+
     def test_data_init_and_bounds(self):
         model = ScaffoldESVR(anchors=8, children=2, shape=(8, 8, 8), flow_scale=8.0, scale_floor=0.05, opacity_init=0.1,
                              anchor_init=torch.rand(8, 4) * 2 - 1)
