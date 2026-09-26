@@ -707,5 +707,17 @@
   "seconds": 10713,
   "steps": 240000,
   "frames": 90
+ },
+ {
+  "run": "next/P2_block128_thr3e-4_480k",
+  "psnr": 40.498,
+  "pmin": 38.67,
+  "pmax": 41.55,
+  "anchors": 103476,
+  "children": 10,
+  "mb": 34.38,
+  "seconds": 17998,
+  "steps": 480000,
+  "frames": 90
  }
 ]
