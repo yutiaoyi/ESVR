@@ -214,7 +214,12 @@ def main():
     random.seed(args.seed)
     voxel = 2 / max(sequence.shape)
     grow_voxel_size = args.grow_voxel_size * voxel
-    grow_t_size = args.grow_t_size or 1.0 / max(len(sequence.train_indices) - 1, 1)
+    train_times = sorted(float(sequence.times[i]) for i in sequence.train_indices)
+    # One temporal cell = the smallest spacing between training frames (upstream's
+    # t_grid_size = one frame). 1/(n-1) equals that only when the training frames
+    # span the whole time_range; a 10-of-90-frame subset would otherwise get a
+    # 9-frame cell. The resolved value is recorded in config.json.
+    grow_t_size = args.grow_t_size or min((b - a for a, b in zip(train_times, train_times[1:])), default=1.0)
     saved = torch.load(args.resume, map_location="cuda", weights_only=False) if args.resume else None
     if saved:
         model = ScaffoldESVR(**saved["model_config"]).cuda()
@@ -238,6 +243,12 @@ def main():
                              anchor_init=anchor_init, anchor_scale=anchor_scale, sigma_max=args.sigma_max, offset_spread=args.offset_spread,
                              opacity_activation=args.opacity_activation,
                              child_scale_init=None if args.child_scale_init_voxels is None else args.child_scale_init_voxels * voxel).cuda()
+        if args.init == "random" and (train_times[0] > 0 or train_times[-1] < 1):
+            # Random anchor times are meant to be uniform over the trained
+            # frames; a frame subset with the full time_range would otherwise
+            # park most anchors at times the run never sees.
+            with torch.no_grad():
+                model.anchor[:, 3] = train_times[0] + model.anchor[:, 3] * (train_times[-1] - train_times[0])
     if saved:
         if args.eval_only:
             print(json.dumps(evaluate(model, sequence, output, args.block), indent=2))
@@ -288,7 +299,7 @@ def main():
             model.load_statistics_state(saved["growth_stats"])
         elif start_step < args.densify_until:
             print("WARNING: checkpoint predates growth-statistics saving; the growing/pruning windows restart from zero", flush=True)
-    (output / "config.json").write_text(json.dumps(vars(args), indent=2))
+    (output / "config.json").write_text(json.dumps({**vars(args), "grow_t_size_resolved": grow_t_size}, indent=2))
     (output / "manifest.json").write_text(json.dumps(sequence.config, indent=2))
     from utils.voxelizer_provenance import record as record_voxelizer
     record_voxelizer(output)

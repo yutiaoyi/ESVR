@@ -1,3 +1,4 @@
+import math
 import unittest
 
 import torch
@@ -226,6 +227,19 @@ class Mathematics(unittest.TestCase):
         model = ScaffoldESVR(anchors=3, children=2, shape=(8, 8, 8))
         with self.assertRaises(ValueError):
             build_compact(model, torch.zeros(3, 2, dtype=torch.bool))
+
+    def test_scale_floor_passes_gradient_below_floor(self):
+        # Forward is clamped to the floor; the gradient must still reach the
+        # parameters of a child whose pre-clamp size is below it (a plain
+        # clamp_min would zero it and trap the child there forever).
+        model = ScaffoldESVR(anchors=2, children=2, shape=(8, 8, 8), scale_floor=0.3)
+        with torch.no_grad():
+            model.log_offset_scale[:, 4:7] = math.log(0.01)   # pre-clamp child scale ~0.005 << floor
+        g = model.generate()
+        self.assertTrue((g.scale >= 0.3).all())
+        g.scale.sum().backward()
+        self.assertTrue((model.log_offset_scale.grad[:, 4:7] != 0).all())
+        self.assertTrue(any(p.grad is not None and p.grad.abs().sum() > 0 for p in model.heads["shape"].parameters()))
 
     def test_data_init_and_bounds(self):
         model = ScaffoldESVR(anchors=8, children=2, shape=(8, 8, 8), flow_scale=8.0, scale_floor=0.05, opacity_init=0.1,

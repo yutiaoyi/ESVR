@@ -203,7 +203,14 @@ class ScaffoldESVR(nn.Module):
         # small enough to touch no voxel centre is skipped by the voxelizer,
         # gets no gradient, and can never recover on its own; a near-singular
         # covariance also produced NaN in the CUDA kernel.
-        scale = (offset_scale[:, None, 4:7] * shape_out[..., :3].sigmoid()).clamp_min(self.config["scale_floor"])
+        pre_scale = offset_scale[:, None, 4:7] * shape_out[..., :3].sigmoid()
+        # Straight-through floor (2026-09-25): the forward value is clamped
+        # exactly as before, but the gradient passes through unchanged. A
+        # plain clamp_min has zero gradient below the floor, so a child that
+        # once shrank under it could never be pulled back by the data term:
+        # 91 % of H4's children (52 % of its anchors entirely) sat there with
+        # pre-clamp sizes ~1e-11 of the floor (third external review, F1).
+        scale = pre_scale + (pre_scale.clamp_min(self.config["scale_floor"]) - pre_scale).detach()
         rotation = normalize_quaternion(shape_out[..., 4:8])
         # Numerical guardrail: sigma is raised to the 4th power downstream.
         sigma = (F.elu(shape_out[..., 3:4]) + 1).clamp(1e-2, self.config["sigma_max"])
