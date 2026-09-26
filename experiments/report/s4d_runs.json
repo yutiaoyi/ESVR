@@ -731,5 +731,17 @@
   "seconds": 5878,
   "steps": 240000,
   "frames": 90
+ },
+ {
+  "run": "jet/J1_block128_thr3e-4_480k_cap400k",
+  "psnr": 42.808,
+  "pmin": 39.49,
+  "pmax": 47.94,
+  "anchors": 400000,
+  "children": 10,
+  "mb": 132.83,
+  "seconds": 7694,
+  "steps": 480000,
+  "frames": 122
  }
 ]

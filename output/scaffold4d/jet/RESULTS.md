@@ -18,4 +18,19 @@ Script: `experiments/run_jet_scaffold4d.sh {smoke,J1}`.
 | Run | Setting | Mean PSNR | Min / max | Anchors | Trained / compact | Time |
 |---|---|---:|---|---:|---|---|
 | JET_smoke_2k | 2,000 steps, 20k anchors (pipeline check) | 16.883 | 10.26 / 21.27 | 20,000 | — | 4.5 min incl. evaluation |
-| J1_block128_thr3e-4_480k_cap400k | full recipe | pending | | | | |
+| **J1_block128_thr3e-4_480k_cap400k** | full recipe | **42.808** | 39.49 / 47.94 | 400,000 (cap filled by step 10k) | 132.8 / **21.9 MB** (42.787) | 2.14 h alone on the GPU |
+
+## J1 notes
+
+- Compression: raw 20.24 GB -> 132.8 MB trained (152x) -> 21.9 MB compact
+  (924x, fp16 + dark/floor children dropped, -0.02 dB).
+- PSNR falls along the sequence as the jet develops: frames 1-10 46.5 dB,
+  56-66 43.0, 112-122 40.9. Per-decile means: 46.2, 43.6, 43.8, 43.6, 43.2,
+  42.7, 41.9, 41.4, 41.2, 41.0, 40.2.
+- The 400k cap fills within 10k steps; afterwards 938k anchors are grown and
+  578k pruned (churn). Useful children per query 34.5k, useful total 339k of
+  4.0M (8.5 %), median temporal half-width 4.1 frames.
+- The monitor curve is still rising at the end (400k 43.04 -> 440k 43.07 ->
+  480k 43.43): under-trained and cap-limited. Obvious follow-ups: larger cap
+  (800k), more steps, and a per-frame static ESVR baseline on jet for the
+  same comparison as on vorts.

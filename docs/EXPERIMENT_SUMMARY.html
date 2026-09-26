@@ -72,7 +72,7 @@ footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--line);font-si
 <div class="stats">
 <div class="stat"><div class="l">当前最佳动态模型</div><b class="hero">40.59 dB</b><div class="s">Scaffold4D · 150k 锚点 · 240k 步 · 压缩后 10.5 MB</div></div>
 <div class="stat"><div class="l">静态天花板(单帧,修复核)</div><b>49.67 dB</b><div class="s">139k 基元 · 67k 步 · 6.1 MB/帧;21k 基元 / 22k 步 = 41.72</div></div>
-<div class="stat"><div class="l">Scaffold4D 已完成运行</div><b>75</b><div class="s">含 15 组未修复核(作废)、11 组筛选、修复核完整训练 47 组</div></div>
+<div class="stat"><div class="l">Scaffold4D 已完成运行</div><b>76</b><div class="s">含 15 组未修复核(作废)、11 组筛选、修复核完整训练 48 组</div></div>
 <div class="stat"><div class="l">目标</div><b>50 dB</b><div class="s">压缩前模型尽量小;静态单帧要 14 万基元 / 67k 步才到。探针:只训 10 帧、每帧优化 ×9 也只到 41.2(D.8)</div></div>
 </div>
 <div class="panel">
@@ -732,14 +732,14 @@ footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--line);font-si
 <div class="lineage">S3D 燃烧射流的 OH 质量分数场:每帧 480×720×120 float32(存储序 z-y-x,x 最快),122 帧,值域 [0, 0.002351](映射到 [0,1] 训练与评测),全部 122 帧载入内存 20 GB。体积是 vorts 的 20 倍,一个 128³ 块只覆盖单帧的 1/24(每帧 24 块,tile 采样),所以每体素的监督量比 vorts 少得多。配方沿用 vorts 上最好的 P1b(块 128³、生长阈值 3e-4、衰减 1/100、tile 采样),按体积放大:上限 40 万锚点、初始 4 万、480k 步。冒烟(2000 步)16.9 dB 只用于验证流程。</div>
 <div class="tablewrap"><table><thead><tr><th>运行</th><th>相对参照的改动 / 路径</th><th>规模 / 耗时</th><th>锚点 / 高斯</th><th>可视化</th><th>状态</th><th class="num">平均 PSNR</th></tr></thead><tbody>
 <tr>
-<td class="name">J1_block128_thr3e-4_480k_cap400k</td>
-<td class="what">P1b 配方 × 20 倍体积:块 128³(1/24 帧)、阈值 3e-4、上限 400k、480k 步<div class="path">output/scaffold4d/jet/J1_block128_thr3e-4_480k_cap400k/</div></td>
+<td class="name"><b>J1_block128_thr3e-4_480k_cap400k</b></td>
+<td class="what">P1b 配方 × 20 倍体积:块 128³(1/24 帧)、阈值 3e-4、上限 400k、480k 步<div class="path">output/scaffold4d/jet/&lt;b&gt;J1_block128_thr3e-4_480k_cap400k&lt;/b&gt;/</div></td>
 <td class="scale">—</td><td class="counts">—</td>
 <td class="vizcell"><span class="none">未生成</span></td>
 <td><span class="pill run">进行中</span></td>
 <td class="num">—<div class="sub"></div></td></tr>
 </tbody></table></div>
-<div class="callout">jet 的 PSNR 与 vorts 不可直接比较:值域归一化后 jet 的高值区只占体素的百分之几(第 60 帧 24% 体素高于最大值的 5%,均值 0.0244),是 ESVR 论文更擅长的稀疏各向异性场;但每帧体素数是 vorts 的 20 倍、每块监督覆盖只有 1/24,训练量相对不足。这一节先记录基线。</div>
+<div class="callout">jet 的 PSNR 与 vorts 不可直接比较:值域归一化后 jet 的高值区只占体素的百分之几(第 60 帧 24% 体素高于最大值的 5%,均值 0.0244),是 ESVR 论文更擅长的稀疏各向异性场;但每帧体素数是 vorts 的 20 倍、每块监督覆盖只有 1/24,训练量相对不足。这一节先记录基线:J1 在 2.1 小时内到 42.8 dB / 压缩后 21.9 MB(924×),是首次在 vorts 之外的数据上跑通完整流程;下一步的自然方向是提高上限(锚点第 1 万步即长满)和步数(曲线未收敛)。</div>
 </section>
 <section class="method"><div class="mh"><span class="letter">E</span><h2>实现与上游的对应与偏离(审计 2026-09-22)</h2></div>
 <div class="lineage">基元、核、监督来自 ESVR;锚点/特征/子椭球结构、线性运动、广义高斯时间门、7 组优化器、dynamic-aware 生长来自 4D-Scaffold-GS 官方代码。不是逐行等价移植;每一处偏离及其实测影响如下(详见 <code>docs/ESVR_SCAFFOLD4D.md</code>)</div>

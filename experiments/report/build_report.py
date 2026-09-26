@@ -434,7 +434,8 @@ parts.append('''</tbody></table></div>
 <section class="method"><div class="mh"><span class="letter">F</span><h2>第二个数据集:jet_Y_OH(燃烧射流,480×720×120,122 帧)</h2></div>
 <div class="lineage">S3D 燃烧射流的 OH 质量分数场:每帧 480×720×120 float32(存储序 z-y-x,x 最快),122 帧,值域 [0, 0.002351](映射到 [0,1] 训练与评测),全部 122 帧载入内存 20 GB。体积是 vorts 的 20 倍,一个 128³ 块只覆盖单帧的 1/24(每帧 24 块,tile 采样),所以每体素的监督量比 vorts 少得多。配方沿用 vorts 上最好的 P1b(块 128³、生长阈值 3e-4、衰减 1/100、tile 采样),按体积放大:上限 40 万锚点、初始 4 万、480k 步。冒烟(2000 步)16.9 dB 只用于验证流程。</div>
 ''' + th)
-JET = [("J1_block128_thr3e-4_480k_cap400k", "P1b 配方 × 20 倍体积:块 128³(1/24 帧)、阈值 3e-4、上限 400k、480k 步", "final", "进行中", "", False)]
+JET = [("<b>J1_block128_thr3e-4_480k_cap400k</b>", "P1b 配方 × 20 倍体积:块 128³(1/24 帧)、阈值 3e-4、上限 400k、480k 步", "final", "当前结论",
+        "<b>42.81 dB</b>(最低帧 39.49,最高 47.94),训练 2.14 小时(独占 GPU,60 步/秒),训练大小 132.8 MB → 压缩后 <b>21.9 MB / 42.79</b>(原始数据 20.2 GB,压缩比 924×)。锚点在前 1 万步就长满 40 万上限,之后大量周转(新生 94 万、剪掉 58 万);每次查询有用孩子 3.45 万,有用总数 33.9 万(占 400 万的 8.5%)。PSNR 随时间递减:前 10 帧 46.5、中段 43.0、末 10 帧 40.9(射流后期结构更多);监控曲线到 480k 步仍在上升(400k 43.04 → 480k 43.43),说明训练量与上限都还不够。", True)]
 for name, what, kind, tag, note, best in JET:
     run = "jet/" + name
     if run in runs:
@@ -442,7 +443,7 @@ for name, what, kind, tag, note, best in JET:
     else:
         parts.append(row(name, what, f"output/scaffold4d/jet/{name}/", "—", "none", pill("run"), "—", counts="—"))
 parts.append('''</tbody></table></div>
-<div class="callout">jet 的 PSNR 与 vorts 不可直接比较:值域归一化后 jet 的高值区只占体素的百分之几(第 60 帧 24% 体素高于最大值的 5%,均值 0.0244),是 ESVR 论文更擅长的稀疏各向异性场;但每帧体素数是 vorts 的 20 倍、每块监督覆盖只有 1/24,训练量相对不足。这一节先记录基线。</div>
+<div class="callout">jet 的 PSNR 与 vorts 不可直接比较:值域归一化后 jet 的高值区只占体素的百分之几(第 60 帧 24% 体素高于最大值的 5%,均值 0.0244),是 ESVR 论文更擅长的稀疏各向异性场;但每帧体素数是 vorts 的 20 倍、每块监督覆盖只有 1/24,训练量相对不足。这一节先记录基线:J1 在 2.1 小时内到 42.8 dB / 压缩后 21.9 MB(924×),是首次在 vorts 之外的数据上跑通完整流程;下一步的自然方向是提高上限(锚点第 1 万步即长满)和步数(曲线未收敛)。</div>
 </section>
 <section class="method"><div class="mh"><span class="letter">E</span><h2>实现与上游的对应与偏离(审计 2026-09-22)</h2></div>
 <div class="lineage">基元、核、监督来自 ESVR;锚点/特征/子椭球结构、线性运动、广义高斯时间门、7 组优化器、dynamic-aware 生长来自 4D-Scaffold-GS 官方代码。不是逐行等价移植;每一处偏离及其实测影响如下(详见 <code>docs/ESVR_SCAFFOLD4D.md</code>)</div>

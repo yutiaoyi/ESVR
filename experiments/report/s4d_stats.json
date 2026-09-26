@@ -1170,5 +1170,22 @@
   "frames": 90,
   "sigma_at_max": 0.271,
   "halfwidth_frames_p50": 3.47
+ },
+ "jet/J1_block128_thr3e-4_480k_cap400k": {
+  "anchors": 400000,
+  "children": 10,
+  "total": 4000000,
+  "active": 105765,
+  "useful_query": 33091,
+  "useful_total": 339003,
+  "useful_query_mean": 34471,
+  "useful_query_min": 16746,
+  "useful_query_max": 45072,
+  "active_query_mean": 101403,
+  "never_selected": 1917487,
+  "useful_never_selected": 9009,
+  "frames": 122,
+  "sigma_at_max": 0.461,
+  "halfwidth_frames_p50": 4.09
  }
 }
