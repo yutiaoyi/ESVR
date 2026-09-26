@@ -6,7 +6,9 @@ images and MP4 animations. Non-Scaffold4D rows are hard-coded from their
 RESULTS.md files. Run: python experiments/report/build_report.py -> index.html."""
 import json, os, html, glob, datetime
 D = os.path.dirname(os.path.abspath(__file__))
-IMG = os.path.join(D, "img")
+ROOT = os.path.dirname(os.path.dirname(D))
+OUT = os.path.join(ROOT, "output", "report_artifact")   # publish copy (index.html + img/); docs/EXPERIMENT_SUMMARY.html mirrors it
+IMG = os.path.join(OUT, "img")
 runs = {r["run"]: r for r in json.load(open(os.path.join(D, "s4d_runs.json")))}
 stats = json.load(open(os.path.join(D, "s4d_stats.json")))
 compact = json.load(open(os.path.join(D, "s4d_compact.json")))
@@ -377,12 +379,17 @@ NEXT = [("L1_sigma1000_480k", "H4 + 时间门 σ 上限 100 → 1000(<code>--sig
          "<b>39.15</b>(−0.28,噪声内),但 90 帧里 87 帧低于 H4;帧间标准差 0.42 → 0.34,最低帧 37.05 → 37.26。最终误差表里最难 / 最易块的 MSE 只差 2 倍——误差分布近乎平坦,没有“难块”可挖,挪走的均匀覆盖反而略有代价(帧采样次数 4,697–7,151,均匀为 5,333)。第一次启动因四个并发运行显存不足在 5k 步 OOM,重跑。", False)]
 NEXT.append(("O1_lr_combo_480k", "H4 + 特征 ×0.3 + offset ×3 + MLP ×3(N2 / N3 / N5 三个正向方向合并,480k 步)", "neg", "负面记录",
              "<b>38.42</b>(<b>−1.02</b> vs H4)。120k 步上各自 +0.3~0.5 的三项,合并后放到 480k 步反而有害,且监控曲线从 20k 步起<b>全程</b>低于 H4 约 1 dB(20k:25.7 vs 28.4;240k:36.9 vs 38.0;480k:37.8 vs 38.9),不是后期才掉——三项叠加从一开始就伤及生长阶段。单项增益不可叠加;上游学习率对 480k 配方已接近最优,不改配方。", False))
+NEXT.append(("Q1_floor_st_480k", "H4 配方,代码修复“尺度下限梯度陷阱”后重跑(<code>clamp_min</code> 对低于下限的输入梯度为 0;改为前向不变、梯度直通)", "neg", "负面记录",
+             "<b>39.09</b>(−0.34,噪声内)。第三次外部复审发现 H4 有 90.9% 的孩子三轴都在 0.5 体素下限之下(52% 的锚点全部如此,预钳位尺度中位数只有下限的 1e-11),而 <code>clamp_min</code> 让它们收不到任何梯度。修复后重跑:PSNR 不变,塌缩反而更深(91.8% / 61% / 1e-26)——说明这不是“卡住回不来”,而是优化器<b>主动</b>把孩子缩到看不见(加法模型里减少叠加过量的最快解法),下限只是把它们留成了 0.5 体素的小点(75% 仍有亮度,压缩时删掉只掉 0.01 dB)。当前模型实际上是约 130 万个亚体素小点 + 8% 真正的椭球。修复保留(正确性),对结果无影响。", False))
+NEXT.append(("P1_block128_240k", "H4 + 块 64³ → 128³、240k 步(按剖析每步 30 → 51 ms,与 H4 同墙钟时间)", "neg", "未完成",
+             "在 35k 步时手动停止:生长停在 1.4 万锚点(H4 同期 15 万)。生长阈值 1.2e-3 是按 64³ 块的梯度分布校准的,整体积监督下梯度估计更平滑、超阈值的重尾变少,阈值不能直接搬——K2(D.8)当年“只长到 1.2 万锚点”是同一原因,K2 的结论因此也是被混淆的。改为 P1b(阈值 3e-4)重跑。", False))
+NEXT.append(("P1b_block128_thr3e-4_240k", "同 P1,生长阈值 1.2e-3 → 3e-4", "final", "进行中", "", False))
 for name, what, kind, tag, note, best in NEXT:
     run = "next/" + name
     if run in runs:
         parts.append(s4d(name, run, what, pill(kind, tag), best=best, note=note))
     else:
-        parts.append(row(name, what, f"output/scaffold4d/next/{name}/", "480,000 步", "none", pill("run"), "—", counts="—"))
+        parts.append(row(name, what + (f'<div class="note">{note}</div>' if note else ""), f"output/scaffold4d/next/{name}/", "—", "none", pill("old" if tag == "未完成" else "run", tag), "—", counts="—"))
 if len(E_GROUPS) == 9:
     e_sec = sum(runs[k]["seconds"] for k in E_GROUPS); e_lo = min(runs[k]["pmin"] for k in E_GROUPS); e_hi = max(runs[k]["pmax"] for k in E_GROUPS)
     e_c = sum(compact[k]["mb_after"] for k in E_GROUPS) if all(k in compact for k in E_GROUPS) else None
@@ -468,5 +475,7 @@ document.querySelectorAll(".viz").forEach(b=>b.addEventListener("click",()=>{{
 lb.addEventListener("click",e=>{{if(e.target!==lbImg&&e.target!==lbVid)closeLb();}});
 document.addEventListener("keydown",e=>{{if(e.key==="Escape")closeLb();}});
 </script>''')
-open(os.path.join(D, "index.html"), "w").write("\n".join(parts))
+html_text = "\n".join(parts)
+open(os.path.join(OUT, "index.html"), "w").write(html_text)
+open(os.path.join(ROOT, "docs", "EXPERIMENT_SUMMARY.html"), "w").write(html_text)
 print("wrote index.html", sum(len(p) for p in parts), "chars;", len(thumbs), "thumbs")

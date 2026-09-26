@@ -659,5 +659,17 @@
   "seconds": 4612,
   "steps": 480000,
   "frames": 90
+ },
+ {
+  "run": "next/Q1_floor_st_480k",
+  "psnr": 39.094,
+  "pmin": 36.49,
+  "pmax": 39.98,
+  "anchors": 150000,
+  "children": 10,
+  "mb": 49.83,
+  "seconds": 3443,
+  "steps": 480000,
+  "frames": 90
  }
 ]

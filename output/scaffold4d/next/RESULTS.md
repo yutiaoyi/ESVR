@@ -65,6 +65,36 @@ was 41.20: its +1.8 dB over H4 is the 9× per-frame compute, not the grouping.
   noise level, but consistent in direction. N2 keeps more children alive
   (compact 9.3 MB vs 7–8).
 
+## Scale-floor gradient trap (Q1) and block size (P1 / P1b)
+
+| Run | Change | Baseline | Mean PSNR | Δ | Trained / compact |
+|---|---|---|---:|---:|---|
+| Q1_floor_st_480k | H4 recipe on the code with the straight-through scale floor (commit aae731c) | H4 39.43 | 39.094 | −0.34 | 49.8 / 6.0 MB |
+| P1_block128_240k | block 128³, 240k steps (equal wall-clock to H4 by the step profile: 51 vs 30 ms) | H4 39.43 | stopped at 35k steps | — | growth stalled at 14k anchors |
+| P1b_block128_thr3e-4_240k | P1 with growth threshold 1.2e-3 → 3e-4 | H4 39.43 | pending | | |
+
+Q1: the third external review found that `clamp_min` gave zero gradient to
+the 90.9 % of H4's children whose pre-clamp size sits below the 0.5-voxel
+floor (52 % of anchors entirely; median pre-clamp size 1e-11 of the floor).
+With the gradient passed through, the collapse gets *deeper* (91.8 % / 61 %
+/ 1e-26) and PSNR is unchanged: the optimizer actively shrinks these children
+(the fastest way to remove additive over-prediction); the floor merely keeps
+them as 0.5-voxel points (75 % still above 1/255 in intensity; dropping them
+at compaction costs 0.01 dB). The model is effectively ~1.3 M sub-voxel
+points plus 8 % real ellipsoids. The fix stays (correctness) but is not a
+lever; the lever is removing those children during training and re-using
+their capacity (importance pruning + residual-driven growth/relocation).
+
+P1: with whole-volume steps the growth threshold calibrated on 64³-block
+gradients no longer fires (smoother gradient estimates, thinner tail): 14k
+anchors at 35k steps vs 150k for H4. The same confound applies to `fifty/K2`
+(12k anchors). Step profile on an idle GPU (H4 checkpoint): generate+at
+13.6 ms, voxelize forward 2.9 ms, loss+backward 11.5 ms, optimizer 2.2 ms at
+64³ (30 ms/step); 51 ms at 128³. Raising the query cutoff to the kernel's
+1/255 threshold leaves outputs bit-identical, sends 27 % fewer children to
+the kernel and saves only 3 %: the step cost is the fixed overhead of the
+1.5 M-child population, not voxelization.
+
 ## Verification (O1 / O2)
 
 O2 (offset ×10) −2.26: overshoot, the offset optimum is near ×3. O1 (the
@@ -76,7 +106,7 @@ rates stay; the LR line is closed.
 
 ## Next
 
-Nothing in this round is worth a second run.
+Implement in-training importance pruning (ESVR score: voxel coverage × intensity × fractional anisotropy) with relocation of freed slots to high-residual voxels; that is the common root of size, step time and dead capacity.
 
 ## Not done
 
