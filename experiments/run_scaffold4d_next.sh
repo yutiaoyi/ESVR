@@ -42,6 +42,9 @@ case "$1" in
   P1) run P1_block128_240k --manifest experiments/vorts_90_all_train.json --steps 240000 --max-anchors 150000 --block 128 ;;
   # Straight-through scale floor (third review F1): same command as H4, code after commit that fixed the clamp_min gradient trap.
   Q1) run Q1_floor_st_480k --manifest experiments/vorts_90_all_train.json --steps 480000 --max-anchors 150000 ;;
+  # P1 stalled at 14k anchors: the growth threshold calibrated on 64^3-block gradients does not transfer to whole-volume
+  # steps (smoother gradient estimates, thinner tail above the threshold). P1b lowers it 4x; exploratory.
+  P1b) run P1b_block128_thr3e-4_240k --manifest experiments/vorts_90_all_train.json --steps 240000 --max-anchors 150000 --block 128 --densify-grad-threshold 3e-4 ;;
   NA) G5="--manifest experiments/vorts_90_all_train.json --steps 120000 --max-anchors 150000 --eval-every 10000"
       run N1_feat_x3_120k   $G5 --feat-lr 0.0225
       run N3_offset_x3_120k $G5 --offset-lr-init 0.03 --offset-lr-final 0.0003
