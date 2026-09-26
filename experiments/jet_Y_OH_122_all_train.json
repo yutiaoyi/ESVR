@@ -1,0 +1,629 @@
+{
+  "shape_xyz": [
+    480,
+    720,
+    120
+  ],
+  "storage_axes": "zyx",
+  "dtype": "<f4",
+  "intensity_range": [
+    0.0,
+    0.002351
+  ],
+  "time_range": [
+    1,
+    122
+  ],
+  "frames": [
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0001.dat",
+      "time": 1,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0002.dat",
+      "time": 2,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0003.dat",
+      "time": 3,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0004.dat",
+      "time": 4,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0005.dat",
+      "time": 5,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0006.dat",
+      "time": 6,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0007.dat",
+      "time": 7,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0008.dat",
+      "time": 8,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0009.dat",
+      "time": 9,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0010.dat",
+      "time": 10,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0011.dat",
+      "time": 11,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0012.dat",
+      "time": 12,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0013.dat",
+      "time": 13,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0014.dat",
+      "time": 14,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0015.dat",
+      "time": 15,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0016.dat",
+      "time": 16,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0017.dat",
+      "time": 17,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0018.dat",
+      "time": 18,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0019.dat",
+      "time": 19,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0020.dat",
+      "time": 20,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0021.dat",
+      "time": 21,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0022.dat",
+      "time": 22,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0023.dat",
+      "time": 23,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0024.dat",
+      "time": 24,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0025.dat",
+      "time": 25,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0026.dat",
+      "time": 26,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0027.dat",
+      "time": 27,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0028.dat",
+      "time": 28,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0029.dat",
+      "time": 29,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0030.dat",
+      "time": 30,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0031.dat",
+      "time": 31,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0032.dat",
+      "time": 32,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0033.dat",
+      "time": 33,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0034.dat",
+      "time": 34,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0035.dat",
+      "time": 35,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0036.dat",
+      "time": 36,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0037.dat",
+      "time": 37,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0038.dat",
+      "time": 38,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0039.dat",
+      "time": 39,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0040.dat",
+      "time": 40,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0041.dat",
+      "time": 41,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0042.dat",
+      "time": 42,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0043.dat",
+      "time": 43,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0044.dat",
+      "time": 44,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0045.dat",
+      "time": 45,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0046.dat",
+      "time": 46,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0047.dat",
+      "time": 47,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0048.dat",
+      "time": 48,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0049.dat",
+      "time": 49,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0050.dat",
+      "time": 50,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0051.dat",
+      "time": 51,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0052.dat",
+      "time": 52,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0053.dat",
+      "time": 53,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0054.dat",
+      "time": 54,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0055.dat",
+      "time": 55,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0056.dat",
+      "time": 56,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0057.dat",
+      "time": 57,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0058.dat",
+      "time": 58,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0059.dat",
+      "time": 59,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0060.dat",
+      "time": 60,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0061.dat",
+      "time": 61,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0062.dat",
+      "time": 62,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0063.dat",
+      "time": 63,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0064.dat",
+      "time": 64,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0065.dat",
+      "time": 65,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0066.dat",
+      "time": 66,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0067.dat",
+      "time": 67,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0068.dat",
+      "time": 68,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0069.dat",
+      "time": 69,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0070.dat",
+      "time": 70,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0071.dat",
+      "time": 71,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0072.dat",
+      "time": 72,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0073.dat",
+      "time": 73,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0074.dat",
+      "time": 74,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0075.dat",
+      "time": 75,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0076.dat",
+      "time": 76,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0077.dat",
+      "time": 77,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0078.dat",
+      "time": 78,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0079.dat",
+      "time": 79,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0080.dat",
+      "time": 80,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0081.dat",
+      "time": 81,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0082.dat",
+      "time": 82,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0083.dat",
+      "time": 83,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0084.dat",
+      "time": 84,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0085.dat",
+      "time": 85,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0086.dat",
+      "time": 86,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0087.dat",
+      "time": 87,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0088.dat",
+      "time": 88,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0089.dat",
+      "time": 89,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0090.dat",
+      "time": 90,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0091.dat",
+      "time": 91,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0092.dat",
+      "time": 92,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0093.dat",
+      "time": 93,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0094.dat",
+      "time": 94,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0095.dat",
+      "time": 95,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0096.dat",
+      "time": 96,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0097.dat",
+      "time": 97,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0098.dat",
+      "time": 98,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0099.dat",
+      "time": 99,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0100.dat",
+      "time": 100,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0101.dat",
+      "time": 101,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0102.dat",
+      "time": 102,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0103.dat",
+      "time": 103,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0104.dat",
+      "time": 104,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0105.dat",
+      "time": 105,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0106.dat",
+      "time": 106,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0107.dat",
+      "time": 107,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0108.dat",
+      "time": 108,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0109.dat",
+      "time": 109,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0110.dat",
+      "time": 110,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0111.dat",
+      "time": 111,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0112.dat",
+      "time": 112,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0113.dat",
+      "time": 113,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0114.dat",
+      "time": 114,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0115.dat",
+      "time": 115,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0116.dat",
+      "time": 116,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0117.dat",
+      "time": 117,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0118.dat",
+      "time": 118,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0119.dat",
+      "time": 119,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0120.dat",
+      "time": 120,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0121.dat",
+      "time": 121,
+      "split": "train"
+    },
+    {
+      "path": "../../../datasets/jet_Y_OH/jet_Y_OH_0122.dat",
+      "time": 122,
+      "split": "train"
+    }
+  ]
+}
