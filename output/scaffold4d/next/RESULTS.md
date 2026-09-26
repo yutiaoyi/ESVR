@@ -72,6 +72,10 @@ was 41.20: its +1.8 dB over H4 is the 9× per-frame compute, not the grouping.
 | Q1_floor_st_480k | H4 recipe on the code with the straight-through scale floor (commit aae731c) | H4 39.43 | 39.094 | −0.34 | 49.8 / 6.0 MB |
 | P1_block128_240k | block 128³, 240k steps (equal wall-clock to H4 by the step profile: 51 vs 30 ms) | H4 39.43 | stopped at 35k steps | — | growth stalled at 14k anchors |
 | **P1b_block128_thr3e-4_240k** | P1 with growth threshold 1.2e-3 → 3e-4 | H4 39.43 | **40.171** | **+0.74** | **29.0 / 6.8 MB**, 0.75 h, 87,325 anchors |
+| **P3_block128_thr1e-4_240k** | P1b with growth threshold 1e-4 (cap 150k filled) | P1b 40.17 | **40.585** | **+0.41** | 49.8 / 10.5 MB, 3.3 h (3 concurrent runs), 150,000 anchors, useful/query 26.8k |
+| P2_block128_thr3e-4_480k | P1b at 480k steps | P1b 40.17 | pending | | |
+| R1_block128_resid200_240k | P1b + `--grow-residual 200` | P1b 40.17 | pending | | |
+| S1_block128_scoreprune_240k | P1b + `--prune-score-ratio 0.3 --prune-score-at 40000,80000` | P1b 40.17 | pending | | |
 
 Q1: the third external review found that `clamp_min` gave zero gradient to
 the 90.9 % of H4's children whose pre-clamp size sits below the 0.5-voxel
