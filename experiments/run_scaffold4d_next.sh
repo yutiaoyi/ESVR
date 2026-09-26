@@ -5,6 +5,7 @@
 #   M1  error-proportional block sampling (--error-sampling 1.0)
 #   N1-N6 base-LR sweep x3 / x0.3 for feature, offset, MLPs (120k steps, vs scale/G5)
 #   O1  N2+N3+N5 combined at 480k (vs H4); O2 offset LR x10 at 120k (vs G5)
+#   P1  block 128^3 at equal wall-clock to H4 (240k steps)
 #   E   "grouping at equal total compute": 9 groups x 10 frames, 53,333 steps and
 #       16,667-anchor cap each (sum = H4's 480k steps / 150k anchors)
 set -euo pipefail
@@ -35,6 +36,9 @@ case "$1" in
   O1) run O1_lr_combo_480k --manifest experiments/vorts_90_all_train.json --steps 480000 --max-anchors 150000 \
         --feat-lr 0.00225 --offset-lr-init 0.03 --offset-lr-final 0.0003 --shape-mlp-lr 0.012 --flow-mlp-lr 0.003 --opacity-mlp-lr-init 0.006 --opacity-mlp-lr-final 0.00006 ;;
   O2) run O2_offset_x10_120k --manifest experiments/vorts_90_all_train.json --steps 120000 --max-anchors 150000 --eval-every 10000 --offset-lr-init 0.1 --offset-lr-final 0.001 ;;
+  # Equal wall-clock control for block size: a 128^3 step costs 51 ms vs 30 ms for 64^3 (profiled on an idle GPU),
+  # so 240k steps of 128^3 ~= H4's 480k steps of 64^3 in time, with 4x the supervised voxels overall.
+  P1) run P1_block128_240k --manifest experiments/vorts_90_all_train.json --steps 240000 --max-anchors 150000 --block 128 ;;
   NA) G5="--manifest experiments/vorts_90_all_train.json --steps 120000 --max-anchors 150000 --eval-every 10000"
       run N1_feat_x3_120k   $G5 --feat-lr 0.0225
       run N3_offset_x3_120k $G5 --offset-lr-init 0.03 --offset-lr-final 0.0003
