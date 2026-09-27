@@ -152,6 +152,26 @@ class Mathematics(unittest.TestCase):
             torch.testing.assert_close(s.get_opacity, full.get_opacity[kept_flat])
             torch.testing.assert_close(s.get_scaling, full.get_scaling[kept_flat])
 
+    def test_compact_roundtrip_normalized(self):
+        import tempfile
+        from scaffold4d.compact import build_compact, load_compact, save_compact
+        model = ScaffoldESVR(anchors=5, children=3, shape=(8, 8, 8), temporal_cutoff=0.0, composition="normalized")
+        with torch.no_grad():
+            model.anchor_feat.normal_()
+            model.offset.normal_()
+        keep = torch.tensor([[False, False, False], [True, False, False], [True, True, True], [False, True, False], [True, False, True]])
+        compact = build_compact(model, keep)
+        with tempfile.TemporaryDirectory() as d:
+            save_compact(compact, f"{d}/c.pt", manifest={"frames": []}, source_args={"steps": 1})
+            loaded = load_compact(torch.load(f"{d}/c.pt", weights_only=False), device="cpu")
+        self.assertEqual(loaded.config["composition"], "normalized")
+        full = model.at(0.3)
+        kept = keep.reshape(-1)[full.child_index]
+        for m in (compact, loaded):
+            s = m.at(0.3)
+            torch.testing.assert_close(s.get_value, full.get_value[kept])
+            torch.testing.assert_close(s.get_opacity, full.get_opacity[kept])
+
     def test_tanh_activation_masks_negative_children(self):
         model = ScaffoldESVR(anchors=4, children=3, shape=(8, 8, 8), temporal_cutoff=0.0, opacity_activation="tanh", opacity_init=0.5)
         with torch.no_grad():
