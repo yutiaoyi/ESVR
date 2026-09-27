@@ -20,6 +20,7 @@ import argparse
 import json
 import math
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -114,6 +115,7 @@ def main():
         return render(xyz, sc, r, a.sigmoid(), shape), None
 
     log = []
+    begin = time.perf_counter()
     for it in range(1, args.steps + 1):
         cos = 0.5 * (1 + math.cos(math.pi * it / args.steps))
         for g, b in zip(opt.param_groups, base):
@@ -156,7 +158,8 @@ def main():
         pred, _ = forward()
         mse = (pred.double() - gt.double()).square().mean().item()
     floats = n * (3 + 3 + 4 + (2 if args.mode == "normalized" else 1))
-    res = dict(mode=args.mode, n=n, frame=args.frame, steps=args.steps, psnr_db=-10 * math.log10(mse), mb_fp32=floats * 4 / 1e6, args=vars(args))
+    res = dict(mode=args.mode, n=n, frame=args.frame, steps=args.steps, psnr_db=-10 * math.log10(mse), mb_fp32=floats * 4 / 1e6,
+               seconds=time.perf_counter() - begin, args=vars(args))
     (out / "result.json").write_text(json.dumps(res, indent=2)); (out / "log.json").write_text(json.dumps(log))
     print("DONE " + json.dumps({k: res[k] for k in ("mode", "n", "psnr_db", "mb_fp32")}), flush=True)
 
