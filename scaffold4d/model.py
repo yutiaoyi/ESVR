@@ -64,7 +64,15 @@ def anchors_from_sequence(sequence, count, voxel_size, t_size, generator=None):
         weights = volume.reshape(-1).double().clamp_min(0)
         if weights.sum() <= 0:
             weights = torch.ones_like(weights)
-        flat = torch.multinomial(weights, n, replacement=False, generator=generator)
+        if weights.numel() <= 2 ** 24:
+            flat = torch.multinomial(weights, n, replacement=False, generator=generator)
+        else:
+            # torch.multinomial is limited to 2^24 categories (a 480x720x120 frame
+            # has 4.1e7 voxels): sample by inverse CDF, then keep distinct voxels.
+            cdf = weights.cumsum(0)
+            u = torch.rand(4 * n, dtype=torch.double, generator=generator) * cdf[-1]
+            flat = torch.unique(torch.searchsorted(cdf, u).clamp_max(weights.numel() - 1))
+            flat = flat[torch.randperm(len(flat), generator=generator)[:n]]
         index3 = torch.stack(torch.unravel_index(flat, sequence.shape), -1)
         xyz = voxel_centers(sequence.shape, index3)
         t = torch.full((n, 1), float(sequence.times[index]), dtype=torch.double)
