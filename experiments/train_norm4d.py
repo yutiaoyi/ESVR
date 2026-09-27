@@ -32,6 +32,7 @@ import torch.nn.functional as F
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from dynamic_esvr.data import VolumeSequence  # noqa: E402
 from gaussian_renderer import query  # noqa: E402
+from utils.loss_utils import ssim  # noqa: E402  (same SSIM as train_scaffold4d.py)
 
 PIPE = SimpleNamespace(compute_cov3D_python=False, debug=False)
 
@@ -50,6 +51,14 @@ class Norm4D(torch.nn.Module):
         z = lambda *s: torch.nn.Parameter(torch.zeros(*s))
         self.xyz, self.t, self.log_scale, self.s, self.w, self.log_sigma, self.flow = z(n, 3), z(n, 1), z(n, 3), z(n, 1), z(n, 1), z(n, 1), z(n, 3)
         self.rot = torch.nn.Parameter(torch.tensor([[1.0, 0, 0, 0]]).repeat(n, 1))
+
+    def active_scale_product(self, t):
+        c = self.config
+        sigma = self.log_sigma.exp().clamp(1e-2, c["sigma_max"])
+        wg = self.w.sigmoid() * torch.exp(-((self.t - t) * sigma).abs().pow(c["beta"]))
+        sc = self.log_scale.exp()
+        sc = sc + (sc.clamp_min(c["floor_vox"] * 2 / max(c["shape"])) - sc).detach()
+        return sc[wg[:, 0] > c["cutoff"]].prod(-1)
 
     def forward(self, t, shape):
         c = self.config
@@ -127,6 +136,14 @@ def main():
     p.add_argument("--lr-t", type=float, default=1e-3, help="Home-time LR (normalised time; one frame = 1/(n-1))")
     p.add_argument("--lr-flow", type=float, default=1e-3)
     p.add_argument("--beta", type=float, default=4.0)
+    # W-recipe alignment (2026-09-27, lanes N4W_*): defaults keep the N4A recipe.
+    p.add_argument("--lambda-ssim", type=float, default=0.0, help="Loss = (1-l) L1 + l (1 - SSIM); W runs use 0.2")
+    p.add_argument("--lambda-vol", type=float, default=0.0, help="+ l * mean scale product of the primitives active at t; W runs use 0.01")
+    p.add_argument("--lr-schedule", choices=("cosine", "expon"), default="cosine",
+                   help="cosine: base*(0.01+0.99 cos); expon: log-linear decay to base*final-lr-scale (train_scaffold4d.py's expon_lr)")
+    p.add_argument("--final-lr-scale", type=float, default=0.01)
+    p.add_argument("--floor-vox", type=float, default=0.3, help="Scale floor in voxels (W runs: 0.5)")
+    p.add_argument("--sigma-max", type=float, default=1e3, help="Upper clamp of the temporal sharpness (W runs: 100)")
     p.add_argument("--eval-every", type=int, default=10000)
     p.add_argument("--seed", type=int, default=0)
     args = p.parse_args()
@@ -140,7 +157,7 @@ def main():
     seq = VolumeSequence(args.manifest)
     shape = seq.shape
     step_len = 2 / max(shape)
-    model = Norm4D(args.n, shape, beta=args.beta).cuda()
+    model = Norm4D(args.n, shape, beta=args.beta, floor_vox=args.floor_vox, sigma_max=args.sigma_max).cuda()
     s_vox = init_from_data(model, seq, args.init_halfwidth, torch.Generator().manual_seed(args.seed))
     (out / "config.json").write_text(json.dumps({**vars(args), "init_scale_vox": s_vox, "model_config": model.config}, indent=2))
     groups = [("xyz", [model.xyz], args.lr / 8 * step_len), ("t", [model.t], args.lr_t), ("log_scale", [model.log_scale], args.lr),
@@ -152,20 +169,29 @@ def main():
     begin = time.perf_counter()
     with (out / "train.jsonl").open("w") as log, (out / "monitor.jsonl").open("w") as mon:
         for it in range(1, args.steps + 1):
-            cos = 0.5 * (1 + math.cos(math.pi * it / args.steps))
+            if args.lr_schedule == "cosine":
+                factor = 0.01 + 0.99 * 0.5 * (1 + math.cos(math.pi * it / args.steps))
+            else:
+                factor = math.exp(math.log(args.final_lr_scale) * min(it / args.steps, 1.0))
             for g, b in zip(opt.param_groups, base):
-                g["lr"] = b * (0.01 + 0.99 * cos)
+                g["lr"] = b * factor
             i = random.choice(seq.train_indices)
+            target = seq.volumes[i].cuda()
             pred, active = model(seq.times[i], shape)
-            loss = (pred - seq.volumes[i].cuda()).abs().mean()
+            l1 = (pred - target).abs().mean()
+            loss = (1 - args.lambda_ssim) * l1
+            if args.lambda_ssim:
+                loss = loss + args.lambda_ssim * (1 - ssim(pred, target))
+            if args.lambda_vol:
+                loss = loss + args.lambda_vol * model.active_scale_product(seq.times[i]).mean()
             opt.zero_grad(set_to_none=True)
             loss.backward()
             opt.step()
             with torch.no_grad():
-                model.log_scale.clamp_(math.log(0.3 * step_len), math.log(8 * step_len))
+                model.log_scale.clamp_(math.log(args.floor_vox * step_len), math.log(8 * step_len))
                 model.log_sigma.clamp_(math.log(1e-2), math.log(model.config["sigma_max"]))
             if it % 100 == 0:
-                log.write(json.dumps(dict(step=it, frame=i, l1=loss.item(), active=active, seconds=time.perf_counter() - begin)) + "\n")
+                log.write(json.dumps(dict(step=it, frame=i, loss=loss.item(), l1=l1.item(), active=active, seconds=time.perf_counter() - begin)) + "\n")
             if it % args.eval_every == 0 or it == args.steps:
                 rows = evaluate(model, seq, mon_idx)
                 mon.write(json.dumps(dict(step=it, frames=rows)) + "\n"); mon.flush()
