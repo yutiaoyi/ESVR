@@ -546,7 +546,7 @@ def training(dataset, opt, pipe, checkpoint, debug_from, chunk_idx, dataset_name
                         chunk_len
                         )
 
-                if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
+                if (iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter)) and not args.no_opacity_reset:
                     gaussians.reset_opacity()
 
             # Optimizer step
@@ -597,6 +597,9 @@ if __name__ == "__main__":
     parser.add_argument("--init_num", type=int, default=100_000, help="Number of Gaussians to initialize")
     parser.add_argument("--composition", choices=("additive", "normalized"), default="additive",
                         help="additive = ESVR; normalized = sum C w s K / max(sum C w K, 0.05 C), weight in the opacity slot, extra value per primitive")
+    parser.add_argument("--no_opacity_reset", action="store_true",
+                        help="Skip only the periodic reset_opacity (everything tied to opacity_reset_interval, e.g. the big-point prune, is unchanged). "
+                             "Under --composition normalized the literal reset (w <= 2/255) leaves most voxels below the denominator floor.")
     parser.add_argument("--init_from_data", action="store_true", help="Data-sampled initial centres and intensities (fairness control); default is ESVR's uniform random init")
     parser.add_argument("--pruning_remainweight", type=float, default=0.66, help="Fraction of Gaussians to keep during global pruning")
     parser.add_argument("--darkpruning_iter", nargs="+", type=int, default=[1,2,3])

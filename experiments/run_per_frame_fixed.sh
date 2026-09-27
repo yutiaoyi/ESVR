@@ -23,6 +23,9 @@ case "$recipe" in
   # everything else identical to S1b / S5b (random init, loss, LRs, densify/prune schedule, iterations).
   S1n) scans=2800; m=1; init=20000;  keep=0.66; extra="--composition normalized" ;;
   S5n) scans=8400; m=3; init=150000; keep=0.0;  extra="--composition normalized" ;;
+  # S1n / S5n without the periodic intensity reset only (the literal reset w <= 2/255 put 83 % of frame-1 voxels below the floor)
+  S1nr) scans=2800; m=1; init=20000;  keep=0.66; extra="--composition normalized --no_opacity_reset" ;;
+  S5nr) scans=8400; m=3; init=150000; keep=0.0;  extra="--composition normalized --no_opacity_reset" ;;
   # regression check after the normalized patch: must reproduce S1b (default additive path untouched)
   S1b_recheck) scans=2800; m=1; init=20000; keep=0.66 ;;
   *) echo "unknown recipe $recipe"; exit 1 ;;
