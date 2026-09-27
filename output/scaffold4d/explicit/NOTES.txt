@@ -1,0 +1,1 @@
+2026-09-26: X2_fromP3_60k_lr3 stopped by hand at {"step": 40000, "mean": 40.48599884895296} (redundant with X1, freeing GPU for W1/W2)

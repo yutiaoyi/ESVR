@@ -274,6 +274,32 @@ what was measured:
 | per-frame optimisation budget ≈ 1/12 of static ESVR's | 90 frames share one run | static ceiling study, `output/experiments/static_ceiling/RESULTS.md` |
 | upstream's `_prune_anchor_optimizer` clamp of the log child-scale columns to ≤ 0.05 on every `adjust_anchor` call is not ported | our `stabilize()` caps `log_offset_scale` at log(10) and the child scale is floored/gated separately; upstream's cap is in scene units | not measured (found by the 09-22 independent review; almost certainly inert here) |
 
+## Normalized composition — the 50 dB result (2026-09-26)
+
+Diagnosis of the ~40 dB plateau, in order of size:
+
+1. **Additive composition on a dense field (~10–13 dB at fixed count).** On
+   one frame, same primitives/init/optimiser/steps, replacing the ESVR sum
+   by normalized kernel regression V = Σ w K s / max(Σ w K, ε) (Martin et
+   al. 2026, arXiv 2609.16024; Image-GS) takes 32k primitives from 42.8 to
+   55.7 dB; 21k reach 52.6 (ESVR's own recipe: 41.8). vorts is dense (90 %
+   of voxels have a non-zero baseline) and an additive sum must tile it
+   with overlapping positive bumps. `output/experiments/normalized/RESULTS.md`.
+2. **Sharing primitives across time (~4 dB on one frame).** Freeing P3's
+   frame-1 slice as independent ESVR primitives: 40.3 → 44.4 dB; distilling
+   P3 into explicit per-child 4D primitives (no MLP, still time-shared) adds
+   only +0.4 dB over 90 frames, so the MLP is not the main constraint.
+   `output/experiments/unshackle/RESULTS.md`, `output/scaffold4d/explicit/RESULTS.md`.
+3. Not the number of useful children per frame (R² = 0.09 over 37 runs), and
+   not the per-frame optimisation budget (block 128 already matches ESVR).
+
+Result: normalized explicit 4D primitives (`experiments/train_norm4d.py`,
+400k primitives × 17 floats) reach **53.25 dB over all 90 frames at 27.2 MB
+fp32 / 13.6 MB fp16 (53.23 dB)**, vs per-frame ESVR 49.52 dB at 555.6 MB and
+41.21 dB at 93.8 MB (`output/experiments/per_frame_fixed/RESULTS.md`).
+`--composition normalized` (value head + weight = opacity head, two voxelizer
+calls) brings the same composition into ScaffoldESVR (`next/W1`, `W2`).
+
 ## Third external review (2026-09-25) — outcome
 
 Checked against upstream line by line: slot decoding (per-slot rows of the last Linear, offsets zero — matches), temporal exponent (upstream `hparam_beta` 4.0 = ours), growing position/levels/dedup/max-pool/weighting (match), temporal cutoff (pure efficiency shortcut: the kernel skips alpha < 1/255 and sigma(5) = 0.993, so any child with opacity < 3.95e-3 is invisible anyway), LR schedule (matches `get_expon_lr_func` without warm-up; anchor LR 0). Findings: **F1 scale-floor gradient trap (fixed, straight-through)**; F2 `--grow-t-size` default / anchor time init for frame subsets (fixed); F3 two undocumented init deviations (documented above); F4 the cutoff could be raised to 3.95e-3 with identical output (measured: -27 % children in the query, only ~3 % faster; left at 1e-3). The volume regulariser was measured NOT to cause the floor pinning (86 % pinned with lambda_vol = 0 vs 83 % with 0.01 at 40k steps); growing does (fixed-population run: 17 %).
