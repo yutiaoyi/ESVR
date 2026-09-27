@@ -27,3 +27,20 @@ the repository root (overwritten by each frame; the last copy points at this
 repository's kernel, sha256 afe68c27...). The runner's self-check guaranteed
 the repository kernel for every frame. Fixed afterwards: the check runs
 before training and the file is written into each chunk's output folder.
+
+## Data-sampled initialisation, frame 1 (fairness control, 2026-09-27)
+
+S1d / S5d = S1b / S5b with `train_chunk.py --init_from_data`
+(`GaussianModel.create_from_volume`: centres 50 % proportional to
+(value + |grad|)^0.6, 35 % uniform, 15 % 2^3-bin peaks; intensity = value x 0.15;
+ESVR's nearest-neighbour scale; all later steps unchanged).
+
+| Recipe | Random init (ESVR) | Data-sampled init | Delta |
+|---|---:|---:|---:|
+| S1b / S1d (20k init, 22,400 it) | 41.81 | 41.98 | +0.17 |
+| S5b / S5d (150k init, 67,200 it) | 49.63 | 48.67 | -0.96 |
+
+ESVR's densification, dark pruning and opacity resets wash out the initial
+layout; a data-sampled start does not help its own pipeline. The random init
+of the per-frame baseline is therefore not a handicap. (S5d ran concurrently
+with other jobs: 19.7 min vs 7.2 min for S5b.)
