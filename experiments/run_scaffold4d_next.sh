@@ -54,6 +54,10 @@ case "$1" in
   # Normalized composition on the P3 recipe (block 128, thr 1e-4, 240k steps, cap 150k); single variable vs P3; W2 also --init data.
   W1) run W1_P3_normalized_240k --manifest experiments/vorts_90_all_train.json --steps 240000 --max-anchors 150000 --block 128 --densify-grad-threshold 1e-4 --composition normalized ;;
   W2) run W2_P3_normalized_initdata_240k --manifest experiments/vorts_90_all_train.json --steps 240000 --max-anchors 150000 --block 128 --densify-grad-threshold 1e-4 --composition normalized --init data ;;
+  # Single-variable follow-ups of W2 (the best normalized Scaffold4D, 54.94 dB, 39.8 MB): W3 halves the steps (training time),
+  # W4 caps anchors at 60k (W2 stopped growing at 119,842 below its 150k cap, so only a lower cap changes the size).
+  W3) run W3_W2_steps120k --manifest experiments/vorts_90_all_train.json --steps 120000 --max-anchors 150000 --block 128 --densify-grad-threshold 1e-4 --composition normalized --init data ;;
+  W4) run W4_W2_cap60k --manifest experiments/vorts_90_all_train.json --steps 240000 --max-anchors 60000 --block 128 --densify-grad-threshold 1e-4 --composition normalized --init data ;;
   NA) G5="--manifest experiments/vorts_90_all_train.json --steps 120000 --max-anchors 150000 --eval-every 10000"
       run N1_feat_x3_120k   $G5 --feat-lr 0.0225
       run N3_offset_x3_120k $G5 --offset-lr-init 0.03 --offset-lr-final 0.0003
