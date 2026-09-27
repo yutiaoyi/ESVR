@@ -454,9 +454,22 @@ parts.append('''</tbody></table></div>
 <tr><td class="name">逐帧 ESVR,90 帧,修复核</td><td class="what">S1b = ESVR 自带配方;S5b = 天花板配方(15 万初始、×3、关全局剪枝)</td><td class="num">S1b 41.21 · 93.8 MB<br>S5b <b>49.52</b> · 555.6 MB</td><td class="vizcell">'''+viz('g__S1b')+viz('g__S5b')+'''</td><td>此前修复核上的逐帧数字都只来自第 1 帧(最容易的一帧)。</td></tr>
 <tr class="best"><td class="name"><b>N4A:归一化显式 4D</b></td><td class="what">40 万个显式 4D 基元 × 17 浮点(位置、时刻、尺度、旋转、数值、权重、时间宽度、速度);沿用 4D-Scaffold-GS 的时间门与线性运动;数据采样初始化,初始半宽 2 帧;9 万步整体积</td><td class="num"><b>53.25</b><br><span class="sub">48.42 – 54.58;27.2 MB fp32 / <b>13.6 MB fp16(53.23)</b></span></td><td class="vizcell">'''+viz('g__N4A')+'''</td><td>90 帧全部超过 48.4 dB,均值比逐帧天花板高 3.7 dB、体积小 20–40 倍,比加法 Scaffold4D 最佳高 12.7 dB。独立重载逐帧一致。最弱帧为序列两端和变化最快的第 21–22 帧。</td></tr>
 <tr><td class="name">N4B</td><td class="what">同 N4A,初始半宽 4 帧</td><td class="num">53.07<br><span class="sub">47.51 – 54.43</span></td><td class="vizcell">'''+viz('g__N4B')+'''</td><td>初始时间宽度影响很小。</td></tr>
-<tr><td class="name">W1 / W2:Scaffold4D + 归一化</td><td class="what">P3 配方完全不变,只加 <code>--composition normalized</code>(W2 另加数据初始化)</td><td class="num">进行中<br><span class="sub">2 万步三帧 42.88 / 43.03;W2 4 万步 45.59(P3 最终 40.22)</span></td><td class="vizcell">'''+viz('g__W1')+viz('g__W2')+'''</td><td>主方法 + 归一化的单变量对照。</td></tr>
+<tr class="best"><td class="name"><b>W1 / W2:Scaffold4D + 归一化</b></td><td class="what">P3 配方完全不变(块 128³、生长阈值 1e-4、24 万步、上限 15 万、0.8 L1 + 0.2 SSIM),W1 只加 <code>--composition normalized</code>;W2 再加 <code>--init data</code>(锚点按数据采样)</td><td class="num">W1 <b>54.66</b> · W2 <b>54.94</b><br><span class="sub">最低帧 50.71 / 50.92;fp32 49.8 / 39.8 MB;fp16 25.1 MB(−0.15)/ <b>20.1 MB(−0.16)</b>;去 floor 孩子 21.5 / 19.0 MB</span></td><td class="vizcell">'''+viz('g__W1')+viz('g__W2')+'''</td><td>同配方、同大小、同随机初始化下,归一化比 P3 高 <b>+14.1 dB</b>;数据初始化再 +0.28 dB,锚点少 20%(生长在 12 万步前停于 119,842,未碰上限)。90 帧全部高于 50.7 dB。<b>验证:</b>保存的逐帧预测对原始数据重算,与记录一致(差 1e-14);压缩文件重载、以 64³ 块重新评测,均值差 0.000 dB。孩子几乎全部起作用(99.4% / 99.99% 过“永不绘制”检验,P3 只有 12%),所以压缩后缩得少;fp16 损失 0.16 dB,大于 P3 / N4A 的 0.03,推测是除法放大了权重与位置的舍入误差。训练 15.6 / 15.0 小时,与 2–10 个任务并发,不能与逐帧 ESVR 的独占时间比较。</td></tr>
+<tr><td class="name">W3 / W4(进行中)</td><td class="what">W2 的单变量:W3 步数减半到 12 万(训练时间);W4 锚点上限 6 万(模型大小)</td><td class="num">进行中</td><td class="vizcell">—</td><td>W2 的监控曲线 14 万步后几乎平了(54.46 → 54.99),W3 检验减半训练时间要付出多少 PSNR。</td></tr>
+<tr><td class="name">逐帧归一化 ESVR(进行中)</td><td class="what">公平性基线:单帧归一化配方(数据采样初始化、L1、3,000 步整体积)逐帧独立训练 90 帧;PN21 / PN10 / PN6 每帧 2.1 万 / 1 万 / 6,300 基元,总大小分别对齐 S1b / W / N4A</td><td class="num">进行中</td><td class="vizcell">—</td><td>把“归一化”与“4D 共享”分开:与 N4A 只差是否跨帧共享。与 S1b 相比同时差初始化、合成、损失三项,不是单变量。</td></tr>
 </tbody></table></div>
-<div class="callout"><b>瓶颈按大小排序:</b>(1) 加法合成与稠密数据不匹配,同基元数约 10–13 dB;(2) 基元跨帧共享的约束,单帧约 4 dB,主要不在 MLP;(3) 容量与预算。“每时刻有用孩子数”与 PSNR 在 37 组运行上几乎无关(R² = 0.09),训练量在块 128³ 后已与逐帧 ESVR 持平。<b>未做:</b>独占 GPU 的训练时间、SZ3 / TTHRESH 在同数据上的对照、fp16 以下的量化、jet_Y_OH 上的归一化。</div>
+<div class="callout"><b>瓶颈按大小排序:</b>(1) 加法合成与稠密数据不匹配,同基元数约 10–13 dB;(2) 基元跨帧共享的约束,单帧约 4 dB,主要不在 MLP;(3) 容量与预算。“每时刻有用孩子数”与 PSNR 在 37 组运行上几乎无关(R² = 0.09),训练量在块 128³ 后已与逐帧 ESVR 持平。<b>未做:</b>独占 GPU 的训练时间、SZ3 / TTHRESH 在同数据上的对照、fp16 以下的量化。jet_Y_OH 上的归一化(J2b)已在跑。</div>
+<h3 class="grp">与 ESVR 基线的公平性对照(2026-09-27)</h3>
+<div class="tablewrap"><table><thead><tr><th>方面</th><th>逐帧 ESVR(S1b / S5b)</th><th>我们(P3 / W1 / W2 / N4A)</th><th>是否公平</th></tr></thead><tbody>
+<tr><td>数据、指标、体素化核、GPU</td><td>vorts 128³ × 90,[−1,1]→[0,1];3D PSNR 逐帧平均;修复核</td><td>完全相同;逐帧 ESVR 的点云已用我们的代码重新渲染,与其日志一致</td><td>公平</td></tr>
+<tr><td>初始化</td><td>体积内均匀随机(种子 42),强度全为 0.1,尺度取最近邻距离,不看数据</td><td>P3 / W1 随机(W1 的数值头从全局数据均值开始);W2、N4A、逐帧归一化基线按数据采样,N4A 数值取该处真值</td><td><b>对我们有利</b>;W2 − W1 = +0.28 dB 是 Scaffold4D 上的实测</td></tr>
+<tr><td>合成方式</td><td>加法</td><td>P3 加法;W1 / W2 / N4A 归一化</td><td>研究变量;逐帧归一化基线补齐</td></tr>
+<tr><td>损失</td><td>0.8 L1 + 0.2 D-SSIM</td><td>P3 / W 同 ESVR 加体积正则 0.01;N4A 与逐帧归一化基线只用 L1</td><td>N4A 与 ESVR 不同</td></tr>
+<tr><td>每帧优化量(整体积遍历次数)</td><td>S1b 约 2,800;S5b 约 8,400</td><td>P3 / W 约 2,670;N4A 约 1,000;逐帧归一化基线 3,000</td><td>S1b 与 W 相当;S5b 对我们偏保守</td></tr>
+<tr><td>增密 / 剪枝</td><td>ESVR 克隆分裂 + 暗剪枝;S1b 全局剪枝 66%,S5b 关</td><td>P3 / W 上游锚点生长 + 最小权重剪枝;N4A 数量固定</td><td>机制不同,各用各的原配方</td></tr>
+<tr><td>模型大小</td><td>每基元 11 个 fp32:S1b 93.8 MB,S5b 555.6 MB(fp16 46.9 / 277.8)</td><td>fp32 状态字典含 MLP:W2 39.8 MB,N4A 27.2 MB;fp16 另列</td><td>fp32 对 fp32 比才公平</td></tr>
+<tr><td>训练时间</td><td>独占 GPU:S1b 37 秒/帧,S5b 130 秒/帧</td><td>与 2–10 个任务并发时测得</td><td><b>不可比</b>,待独占重测</td></tr>
+</tbody></table></div>
 </section>
 <section class="method"><div class="mh"><span class="letter">E</span><h2>实现与上游的对应与偏离(审计 2026-09-22)</h2></div>
 <div class="lineage">基元、核、监督来自 ESVR;锚点/特征/子椭球结构、线性运动、广义高斯时间门、7 组优化器、dynamic-aware 生长来自 4D-Scaffold-GS 官方代码。不是逐行等价移植;每一处偏离及其实测影响如下(详见 <code>docs/ESVR_SCAFFOLD4D.md</code>)</div>

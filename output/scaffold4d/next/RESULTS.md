@@ -135,3 +135,29 @@ P2 = P1b at 480k steps, P3 = P1b with threshold 1e-4 (more anchors); then implem
 
 Single seed throughout; the 120k-step LR results have not been confirmed at
 480k; no held-out frames (by decision: this is data fitting of all 90 frames).
+
+## Normalized composition on the P3 recipe (W1 / W2, 2026-09-27)
+
+Same recipe as P3 (block 128, growth threshold 1e-4, 240k steps, cap 150k,
+0.8 L1 + 0.2 SSIM + 0.01 volume regulariser). W1 changes one thing vs P3:
+`--composition normalized` (V = Σ w g K s / max(Σ w g K, 0.05)). W2 changes
+one thing vs W1: `--init data` (anchors sampled from the data instead of
+uniformly at random).
+
+| Run | Change | Baseline | Mean PSNR (min / max) | Δ | fp32 | fp16 | fp16 + drop floor | Anchors | Train time |
+|---|---|---|---:|---:|---:|---:|---:|---:|---|
+| W1_P3_normalized_240k | normalized composition | P3 40.585 | **54.663** (50.71 / 56.46) | **+14.08** | 49.8 MB | 25.1 MB (−0.147 dB) | 21.5 MB (−0.164 dB) | 150,000 (cap) | 15.6 h, 2–10 concurrent jobs |
+| W2_P3_normalized_initdata_240k | + data-sampled anchors | W1 54.663 | **54.939** (50.92 / 56.99) | +0.28 | 39.8 MB | 20.1 MB (−0.161 dB) | 19.0 MB (−0.163 dB) | 119,842 (growth stopped below cap) | 15.0 h, 2–10 concurrent jobs |
+
+Verification:
+- The saved predictions (`evaluation/frame_*.npy`) against the raw data reproduce the stored per-frame PSNR to 1.4e-14 dB; no value outside [0, 1].
+- The reloaded compact file, evaluated in 64³ blocks instead of the training 128³ block, gives the same mean PSNR (Δ 0.000 dB for both runs).
+- Compaction bug fixed first (b7ea10a): under normalized composition the never-drawn test is w < (1/255) / norm_C, not w < 1/255.
+
+What it says:
+- Normalization, not the 4D structure, is the jump: +14.1 dB at identical size, recipe and random init (W1 vs P3).
+- Almost every child is used: 99.4 % (W1) and 99.99 % (W2) survive the exact dark test, vs 12 % for P3. So compaction no longer shrinks the model much (P3 10.5 MB compact; W2 19.0 MB).
+- fp16 costs 0.15–0.16 dB here, vs 0.03 dB for P3 and N4A: the ratio amplifies small errors in weights and positions. Mixed precision (positions in fp32) is untested.
+- Data-sampled init: +0.28 dB with 20 % fewer anchors. Growth ends at step 120k (densify-until = steps/2); both curves are nearly flat after 140k (W2: 54.46 at 140k, 54.99 at 240k on the 3 monitor frames).
+
+Fairness (see also the table in docs): ESVR (S1b/S5b) uses random init, W1 does too (except that the value head starts at the global data mean); W2 and N4A use the data. S1b/S5b training times were measured alone, W1/W2 under concurrency. The per-frame normalized ESVR baseline (output/experiments/per_frame_normalized, PN21/PN10/PN6) and W3 (120k steps) / W4 (60k cap) are running.

@@ -300,6 +300,17 @@ fp32 / 13.6 MB fp16 (53.23 dB)**, vs per-frame ESVR 49.52 dB at 555.6 MB and
 `--composition normalized` (value head + weight = opacity head, two voxelizer
 calls) brings the same composition into ScaffoldESVR (`next/W1`, `W2`).
 
+ScaffoldESVR + normalized (2026-09-27, `output/scaffold4d/next/RESULTS.md`):
+the P3 recipe with only `--composition normalized` (W1) reaches **54.66 dB**
+at the same 49.8 MB (+14.1 dB over P3); with data-sampled anchors (W2)
+**54.94 dB at 39.8 MB fp32 / 20.1 MB fp16 (54.78 dB)**, every frame above
+50.7 dB. Compaction under normalized composition must test w < (1/255)/norm_C
+(fixed in b7ea10a); almost all children are drawn (99.4-99.99 %), so
+compaction shrinks these models far less than additive ones. Fairness caveats
+(init, loss, concurrency of timings) are tabulated in the report, section G;
+a per-frame normalized ESVR baseline (`output/experiments/per_frame_normalized`)
+is running.
+
 ## Third external review (2026-09-25) — outcome
 
 Checked against upstream line by line: slot decoding (per-slot rows of the last Linear, offsets zero — matches), temporal exponent (upstream `hparam_beta` 4.0 = ours), growing position/levels/dedup/max-pool/weighting (match), temporal cutoff (pure efficiency shortcut: the kernel skips alpha < 1/255 and sigma(5) = 0.993, so any child with opacity < 3.95e-3 is invisible anyway), LR schedule (matches `get_expon_lr_func` without warm-up; anchor LR 0). Findings: **F1 scale-floor gradient trap (fixed, straight-through)**; F2 `--grow-t-size` default / anchor time init for frame subsets (fixed); F3 two undocumented init deviations (documented above); F4 the cutoff could be raised to 3.95e-3 with identical output (measured: -27 % children in the query, only ~3 % faster; left at 1e-3). The volume regulariser was measured NOT to cause the floor pinning (86 % pinned with lambda_vol = 0 vs 83 % with 0.01 at 40k steps); growing does (fixed-population run: 17 %).
