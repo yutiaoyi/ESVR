@@ -160,4 +160,12 @@ What it says:
 - fp16 costs 0.15–0.16 dB here, vs 0.03 dB for P3 and N4A: the ratio amplifies small errors in weights and positions. Mixed precision (positions in fp32) is untested.
 - Data-sampled init: +0.28 dB with 20 % fewer anchors. Growth ends at step 120k (densify-until = steps/2); both curves are nearly flat after 140k (W2: 54.46 at 140k, 54.99 at 240k on the 3 monitor frames).
 
-Fairness (see also the table in docs): ESVR (S1b/S5b) uses random init, W1 does too (except that the value head starts at the global data mean); W2 and N4A use the data. S1b/S5b training times were measured alone, W1/W2 under concurrency. The per-frame normalized ESVR baseline (output/experiments/per_frame_normalized, PN21/PN10/PN6) and W3 (120k steps) / W4 (60k cap) are running.
+Fairness (see also the table in docs): ESVR (S1b/S5b) uses random init, W1 does too (except that the value head starts at the global data mean); W2 and N4A use the data. S1b/S5b training times were measured alone, W1/W2 under concurrency. The per-frame normalized ESVR baseline is in output/experiments/per_frame_normalized (PN21 51.05 dB at 90.7 MB, PN10 43.70 at 43.2 MB; W2 is better on 90/90 frames against both).
+
+### W3: W2 with half the steps (2026-09-27)
+
+| Run | Change | Baseline | Mean PSNR (min / max) | Δ | fp32 | fp16 | fp16 + drop floor | Anchors | Train time |
+|---|---|---|---:|---:|---:|---:|---:|---:|---|
+| W3_W2_steps120k | `--steps 120000` (LR decay, growth window and prune window all scale with it) | W2 54.939 | **52.983** (48.18 / 54.90) | −1.96, worse on 90/90 frames | 38.3 MB | 19.3 MB (−0.101 dB) | 18.3 MB (−0.105 dB) | 115,138 | 6.1 h, concurrent (W2 15.0 h) |
+
+Verified as W1/W2 (saved predictions reproduce the stored PSNR to 1.4e-14; exact compaction reload Δ 0.000 dB). W3 leads W2 early (50.92 vs 48.18 at 60k steps on the monitor frames, because its LR decays twice as fast) but ends 2 dB lower; W2's gain after 120k (53.13 → 54.99) is the low-LR tail. Halving training time costs ~2 dB; W3 still beats per-frame ESVR's ceiling S5b (49.52, 555.6 MB) and per-frame normalized PN21 (51.05, 90.7 MB). W4 (60k anchor cap) is running.
