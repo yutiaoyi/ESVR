@@ -68,9 +68,14 @@ def main():
         p.error(f"Checkpoint lacks parameters: {missing[:5]}")
     before = sum(t.numel() * t.element_size() for t in model.state_dict().values())
 
+    # Under normalized composition g.intensity is the weight w, and the voxelizer
+    # draws a child with amplitude norm_C * w * gate (<= norm_C * w). The kernel
+    # skips a voxel when amplitude * kernel < 1/255, so the child is never drawn
+    # only when w < dark / norm_C; w < dark alone would drop visible children.
+    dark = args.dark / cfg.get("norm_C", 100.0) if cfg.get("composition", "additive") == "normalized" else args.dark
     with torch.no_grad():
         g = model.generate()
-        keep = g.intensity[..., 0] >= args.dark
+        keep = g.intensity[..., 0] >= dark
         if args.drop_floor:
             keep &= g.scale.amax(-1) > cfg["scale_floor"] * 1.2
         never_selected = None
@@ -81,7 +86,7 @@ def main():
             never_selected = int((keep.reshape(-1) & ~ever).sum())
             keep &= ever.reshape(keep.shape)
     if not keep.any():
-        p.error(f"No child survives the thresholds (dark {args.dark}, drop_floor={args.drop_floor}, drop_never_selected={args.drop_never_selected}); nothing to write")
+        p.error(f"No child survives the thresholds (dark {dark}, drop_floor={args.drop_floor}, drop_never_selected={args.drop_never_selected}); nothing to write")
     compact = build_compact(model, keep, fp16=args.fp16)
     save_compact(compact, out / "model_compact.pt", ck["manifest"], ck["args"], fp16=args.fp16)
     # Evaluate what was written, not the in-memory object.
@@ -92,6 +97,7 @@ def main():
     report = dict(run=str(run), anchors_before=cfg["anchors"], children_before=cfg["anchors"] * cfg["children"],
                   anchors_kept=compact.config["anchors"], children_kept=int(keep.sum()), fp16=args.fp16, drop_floor=args.drop_floor,
                   drop_never_selected=args.drop_never_selected, dropped_never_selected=never_selected,
+                  composition=cfg.get("composition", "additive"), dark_threshold_on_intensity=dark,
                   bytes_before=before, bytes_after=stored, mb_before=round(before / 1e6, 2), mb_after=round(stored / 1e6, 2),
                   ratio=round(before / stored, 2), file_mb=round((out / "model_compact.pt").stat().st_size / 1e6, 2),
                   psnr_before=round(float(np.mean([r["psnr_db"] for r in original])), 3),
