@@ -178,6 +178,8 @@ def training(dataset, opt, pipe, checkpoint, debug_from, chunk_idx, dataset_name
 
     psnr_log_path = os.path.join(scene.model_path, "psnr_log.txt")
     print("training log path:", psnr_log_path)
+    from utils.voxelizer_provenance import record as record_voxelizer
+    record_voxelizer(scene.model_path)
     write_training_parameters(
         psnr_log_path,
         args,
@@ -594,8 +596,11 @@ if __name__ == "__main__":
     args.save_iterations.append(args.iterations)
 
     print("Optimizing " + args.model_path + "\n")
-    from utils.voxelizer_provenance import record as record_voxelizer
-    record_voxelizer(args.model_path)
+    # Refuse a foreign voxelizer before training; the provenance file itself is
+    # written into the chunk's output folder once it is known (training()).
+    from utils.voxelizer_provenance import describe as describe_voxelizer
+    if not describe_voxelizer()["inside_this_repo"]:
+        raise RuntimeError("Loaded voxelizer is outside this repository; launch with .venv/bin/python, not a foreign activate script")
 
     # Initialize system state (RNG)
     safe_state(args.quiet)

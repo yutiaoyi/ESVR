@@ -21,7 +21,9 @@ the easiest frame (unfixed-kernel 90-frame run: frame 1 = 41.77, mean 41.22).
   intensity 1), as ESVR stores them.
 - Per-frame values: `summary.json`.
 
-Known issue: `train_chunk.py` writes `voxelizer.json` to `args.model_path`,
-which is empty in this call path, so the provenance file landed at the
-repository root (overwritten by each frame) instead of each frame's folder.
-The runner's self-check still guarantees the repository kernel was loaded.
+Provenance: during these runs `train_chunk.py` wrote `voxelizer.json` to
+`args.model_path`, which is empty in this call path, so the file landed at
+the repository root (overwritten by each frame; the last copy points at this
+repository's kernel, sha256 afe68c27...). The runner's self-check guaranteed
+the repository kernel for every frame. Fixed afterwards: the check runs
+before training and the file is written into each chunk's output folder.
