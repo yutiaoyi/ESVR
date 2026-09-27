@@ -17,4 +17,7 @@ run() {
 case "$1" in
   smoke) run JET_smoke_2k --steps 2000 --anchors 20000 --max-anchors 40000 --eval-every 0 ;;
   J1)    run J1_block128_thr3e-4_480k_cap400k --steps 480000 --max-anchors 400000 --anchors 40000 ;;
+  # J1 + normalized composition (single variable; vorts next/W1: 40.6 -> 50+ dB); J2b also samples anchors from the data (vorts next/W2).
+  J2a)   run J2a_normalized_480k_cap400k --steps 480000 --max-anchors 400000 --anchors 40000 --composition normalized ;;
+  J2b)   run J2b_normalized_initdata_480k_cap400k --steps 480000 --max-anchors 400000 --anchors 40000 --composition normalized --init data ;;
 esac
