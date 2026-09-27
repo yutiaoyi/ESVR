@@ -1,6 +1,7 @@
 """Experiment lineage graph for the report page: which run is a variant of which.
 
-Each node is (id, parent, name, detail, kind). The name says what the run
+Each node is (id, parent, name, detail, kind[, note]); the optional note is a
+third line for a cross-reference that is not a parent-child edge. The name says what the run
 changes relative to its parent (one variable, unless the name lists more);
 the detail is its 90-frame vorts result unless marked otherwise. Layout is a
 left-to-right tidy tree (leaves in listed order, parents centred on children).
@@ -23,7 +24,8 @@ NODES = [
     ("S5n", "S5b", "S5n · +归一化", "第 1 帧 53.25 · 87% 体素在分母下限", "frame1"),
     ("S5nr", "S5n", "S5nr · −强度重置", "90 帧排队中", "run"),
     ("sn", "esvr", "单帧归一化测试", "ESVR 核 + 简化优化器 · 第 1 帧 55.75", "frame1"),
-    ("N4A", "sn", "N4A · 显式 4D + 归一化", "53.25 dB · 27.2 MB", "norm"),
+    ("N4A", "sn", "N4A · 显式 4D + 归一化", "53.25 dB · 27.2 MB", "norm",
+     "表示 = W 系列去掉锚点/MLP · 配方不同"),
     ("N4B", "N4A", "N4B · 初始时间半宽 4 帧", "53.07 dB · 27.2 MB", "norm"),
     ("PN", "sn", "PN21 / PN10 / PN6 · 逐帧 90 帧", "51.05 / 43.70 / 38.51 dB", "norm"),
     # other dynamic families
@@ -49,7 +51,8 @@ NODES = [
     ("P2RS", "P1b", "P2 / R1 / S1", "40.50 / 40.26 / 39.87 dB", "add"),
     ("P3", "P1b", "P3 · 阈值 1e-4", "40.59 dB · 49.8 MB", "add"),
     ("W1", "P3", "W1 · +归一化", "54.66 dB · 49.8 MB", "norm"),
-    ("W2", "W1", "W2 · +数据初始化", "54.94 dB · 39.8 MB(fp16 20.1)", "best"),
+    ("W2", "W1", "W2 · +数据初始化", "54.94 dB · 39.8 MB(fp16 20.1)", "best",
+     "去掉锚点/MLP 的显式版 ≈ N4A"),
     ("W3", "W2", "W3 · 步数减半(12 万)", "52.98 dB · 38.3 MB", "norm"),
     ("W4", "W2", "W4 · 锚点上限 6 万", "进行中", "run"),
     ("X1", "P3", "X1 · 显式加法 4D 蒸馏", "40.96 dB · 11.6 MB", "add"),
@@ -58,7 +61,8 @@ NODES = [
     ("J2b", "J1", "jet J2b · +归一化 +数据初始化", "进行中", "run"),
 ]
 
-BW, BH, COLW, ROWH, PAD = 186, 38, 212, 46, 12
+BW, BH, COLW, ROWH, PAD = 196, 38, 222, 56, 12
+BH_NOTE = 52
 STYLE = {  # fill, stroke, width, dash, opacity
     "root": ("var(--accent-soft)", "var(--accent)", 1.5, "", 1),
     "void": ("var(--surface)", "var(--line2)", 1, "3 3", .5),
@@ -98,24 +102,29 @@ def _svg():
     pos = _layout()
     by = {n[0]: n for n in NODES}
     w = max(x for x, _ in pos.values()) + BW + 2 * PAD
-    h = max(y for _, y in pos.values()) + BH + 2 * PAD
+    h = max(y for _, y in pos.values()) + BH_NOTE + 2 * PAD
     out = [f'<svg viewBox="0 0 {w:.0f} {h:.0f}" width="{w:.0f}" height="{h:.0f}" role="img" aria-label="实验谱系图">']
     for i, (x, y) in pos.items():
         par = by[i][1]
         if par:
+            hp = BH_NOTE if len(by[par]) > 5 else BH
             px, py = pos[par]
-            x0, y0, x1, y1 = px + BW + PAD, py + BH / 2 + PAD, x + PAD, y + BH / 2 + PAD
+            hc = BH_NOTE if len(by[i]) > 5 else BH
+            x0, y0, x1, y1 = px + BW + PAD, py + hp / 2 + PAD, x + PAD, y + hc / 2 + PAD
             xm = (x0 + x1) / 2
             out.append(f'<path d="M{x0:.1f},{y0:.1f} C{xm:.1f},{y0:.1f} {xm:.1f},{y1:.1f} {x1:.1f},{y1:.1f}" fill="none" stroke="var(--line2)" stroke-width="1.3"/>')
     for i, (x, y) in pos.items():
-        _, _, name, detail, kind = by[i]
+        _, _, name, detail, kind, *note = by[i]
+        bh = BH_NOTE if note else BH
         fill, stroke, sw, dash, op = STYLE[kind]
         da = f' stroke-dasharray="{dash}"' if dash else ""
         star = "★ " if kind == "best" else ""
-        out.append(f'<g opacity="{op}"><title>{html.escape(name + " — " + detail)}</title>'
-                   f'<rect x="{x + PAD:.1f}" y="{y + PAD:.1f}" width="{BW}" height="{BH}" rx="5" fill="{fill}" stroke="{stroke}" stroke-width="{sw}"{da}/>'
+        out.append(f'<g opacity="{op}"><title>{html.escape(name + " — " + detail + ("; " + note[0] if note else ""))}</title>'
+                   f'<rect x="{x + PAD:.1f}" y="{y + PAD:.1f}" width="{BW}" height="{bh}" rx="5" fill="{fill}" stroke="{stroke}" stroke-width="{sw}"{da}/>'
                    f'<text class="nm" x="{x + PAD + 8:.1f}" y="{y + PAD + 15:.1f}">{html.escape(star + name)}</text>'
-                   f'<text class="dt" x="{x + PAD + 8:.1f}" y="{y + PAD + 30:.1f}">{html.escape(detail)}</text></g>')
+                   f'<text class="dt" x="{x + PAD + 8:.1f}" y="{y + PAD + 30:.1f}">{html.escape(detail)}</text>'
+                   + (f'<text class="dt" x="{x + PAD + 8:.1f}" y="{y + PAD + 45:.1f}" style="fill:var(--c-norm)">{html.escape(note[0])}</text>' if note else "")
+                   + '</g>')
     out.append("</svg>")
     return "".join(out)
 
@@ -129,7 +138,7 @@ def _key(kind, label):
 
 LINEAGE = ('<div class="panel"><h2>实验谱系图</h2>'
            '<p class="lead">每条连线从“配置来源”指向“在它基础上改动得到的实验”;方框第一行写相对上一格改了什么(一次只改一个变量,除非列出多项),第二行是 vorts 90 帧平均 PSNR 与 fp32 模型大小(另有注明的除外)。'
-           '同一方框里用斜杠并列的是同一父配置下的几个单变量兄弟实验。图较宽,可左右滚动;悬停方框看全文。</p>'
+           '同一方框里用斜杠并列的是同一父配置下的几个单变量兄弟实验。玫红色第三行是不属于父子关系的对应:N4A 的表示就是 W 系列去掉锚点、特征和共享 MLP 后的显式版(时间门 β=4、线性运动、权重 + 数值的归一化合成都相同),但它不是从 W 改出来的,训练配方沿用单帧归一化测试(只用 L1、固定 40 万基元不增密、余弦学习率、9 万步;W 为 0.8 L1 + 0.2 SSIM、锚点生长、24 万步),所以连线仍接在“单帧归一化测试”下。图较宽,可左右滚动;悬停方框看全文。</p>'
            '<div class="lin">' + _svg() + '</div>'
            '<div class="legend">' + "".join(_key(k, l) for k, l in (
                ("root", "方法来源"), ("add", "有效 · 加法合成"), ("norm", "归一化合成"), ("best", "当前最佳"),
