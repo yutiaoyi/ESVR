@@ -473,6 +473,46 @@ class GaussianModel:
         torch.cuda.empty_cache()
         print('get_xyz.shape[0]',self.get_xyz.shape[0])
 
+    def create_from_volume(self, gt, num_start, spatial_lr_scale, chunk_len, k=0.15, seed=42):
+        """Data-sampled alternative to create_random_onthefly (fairness control,
+        2026-09-27): centres drawn 50 % proportional to (value + |grad|)^0.6,
+        35 % uniform, 15 % at the brightest voxels of 2^3 bins, jittered within
+        the voxel; intensity = value there * k (overlap compensation, as in
+        experiments/static_normalized.py). Scale (nearest-neighbour distance),
+        rotation and everything after initialisation are unchanged.
+        Full-volume training only (chunk_len == 2)."""
+        import torch.nn.functional as F
+        if chunk_len != 2.0:
+            raise ValueError("create_from_volume supports full-volume training only")
+        self.spatial_lr_scale = spatial_lr_scale
+        g = gt.float().cuda()
+        shape = tuple(g.shape)
+        gen = torch.Generator(device="cuda").manual_seed(seed)
+        grad = torch.stack(torch.gradient(g), 0).norm(dim=0)
+        w = (g + grad).clamp_min(0).pow(0.6).flatten()
+        n_imp, n_uni = int(0.5 * num_start), int(0.35 * num_start)
+        n_peak = num_start - n_imp - n_uni
+        idx = [torch.multinomial(w / w.sum(), n_imp, replacement=True, generator=gen),
+               torch.randint(0, g.numel(), (n_uni,), device="cuda", generator=gen)]
+        pooled, arg = F.max_pool3d(g[None, None], 2, return_indices=True)
+        idx.append(arg.flatten()[pooled.flatten().argsort(descending=True)[:n_peak]])
+        idx = torch.cat(idx)
+        ijk = torch.stack(torch.unravel_index(idx, shape), 1).float()
+        ijk += torch.rand(ijk.shape, device="cuda", generator=gen) - 0.5
+        step = 2.0 / max(shape)
+        xyz = (ijk + 0.5 - torch.tensor(shape, device="cuda", dtype=torch.float) / 2) * step
+        print(f"Data-sampled point cloud ({num_start}), intensity = value * {k}")
+        dist2 = torch.clamp_min(distCUDA2(xyz), 0.0000001)
+        scales = torch.log(torch.sqrt(dist2))[..., None].repeat(1, 3)
+        rots = torch.zeros((num_start, 4), device="cuda")
+        rots[:, 0] = 1
+        opacities = inverse_sigmoid((g.flatten()[idx] * k).clamp(1e-4, 0.99)[:, None])
+        self._xyz = nn.Parameter(xyz.requires_grad_(True))
+        self._scaling = nn.Parameter(scales.requires_grad_(True))
+        self._rotation = nn.Parameter(rots.requires_grad_(True))
+        self._opacity = nn.Parameter(opacities.requires_grad_(True))
+        self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
+
     def create_random_onthefly(self, num_start : int, spatial_lr_scale : float, chunk_len : float):
             self.spatial_lr_scale = spatial_lr_scale
             print(spatial_lr_scale)

@@ -172,7 +172,10 @@ def training(dataset, opt, pipe, checkpoint, debug_from, chunk_idx, dataset_name
     gaussians = GaussianModel(x_chunk_size, y_chunk_size, z_chunk_size)
     scene = Scene(dataset, gaussians)
     if gaussians._xyz.shape[0] == 0 :
-        gaussians.create_random_onthefly(opt.init_num, scene.spatial_lr_scale, chunk_len)
+        if args.init_from_data:
+            gaussians.create_from_volume(gt_vol_chunk, opt.init_num, scene.spatial_lr_scale, chunk_len)
+        else:
+            gaussians.create_random_onthefly(opt.init_num, scene.spatial_lr_scale, chunk_len)
 
     gaussians.training_setup(opt)
 
@@ -588,6 +591,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--subvol_size", type=int, default=64, help="Size of the subvolume to use for training")
     parser.add_argument("--init_num", type=int, default=100_000, help="Number of Gaussians to initialize")
+    parser.add_argument("--init_from_data", action="store_true", help="Data-sampled initial centres and intensities (fairness control); default is ESVR's uniform random init")
     parser.add_argument("--pruning_remainweight", type=float, default=0.66, help="Fraction of Gaussians to keep during global pruning")
     parser.add_argument("--darkpruning_iter", nargs="+", type=int, default=[1,2,3])
     parser.add_argument("--globalpruning_iter", nargs="+", type=int, default=[1,2,3])
