@@ -83,6 +83,7 @@ def s4d(name, run, what, status, best=False, note=""):
                f'{r["psnr"]:.2f} dB', f'{r["pmin"]:.2f} – {r["pmax"]:.2f}', best, counts=count_cell(run), kernel=kernel)
 
 # ---------- chart data ----------
+from lineage import LINEAGE  # experiments/report/lineage.py
 points = []
 def pt(series, mb, psnr, label, faded=False):
     points.append(dict(s=series, x=mb, y=psnr, l=label, f=faded))
@@ -112,6 +113,19 @@ for run, r in runs.items():
         if run in compact:
             pt("s4d_compact", compact[run]["mb_after"], compact[run]["psnr_after"], label + " · 压缩后", faded=partial)
 
+pt("static", 93.8, 41.21, "S1b · ESVR 自带配方,90 帧实跑(修复核)")
+pt("static", 555.6, 49.52, "S5b · ESVR 天花板配方,90 帧实跑(修复核)")
+pt("s4d_fix", 11.6, 40.96, "X1 · 显式加法 4D(P3 蒸馏,无 MLP)")
+for mb_, ps_, lb_ in ((90.7, 51.05, "PN21 · 逐帧归一化 ESVR,每帧 2.1 万基元"), (43.2, 43.70, "PN10 · 逐帧归一化 ESVR,每帧 1 万"), (27.2, 38.51, "PN6 · 逐帧归一化 ESVR,每帧 6,300")):
+    pt("pfnorm", mb_, ps_, lb_)
+for mb_, ps_, lb_ in ((49.8, 54.66, "W1 · Scaffold4D + 归一化"), (39.8, 54.94, "W2 · Scaffold4D + 归一化 + 数据初始化(当前最佳)"), (38.3, 52.98, "W3 · W2 步数减半")):
+    pt("norm", mb_, ps_, lb_)
+for mb_, ps_, lb_ in ((21.5, 54.50, "W1"), (19.0, 54.78, "W2"), (18.3, 52.88, "W3")):
+    pt("s4d_compact", mb_, ps_, lb_ + " · 压缩后(fp16 + 去 floor 孩子)")
+pt("normx", 27.2, 53.25, "N4A · 显式 4D + 归一化")
+pt("normx", 27.2, 53.07, "N4B · N4A 初始时间半宽 4 帧")
+pt("s4d_compact", 13.6, 53.23, "N4A · fp16")
+
 E_GROUPS = sorted(k for k in runs if k.startswith("next/E_group"))
 if len(E_GROUPS) == 9:
     e_mb = sum(runs[k]["mb"] for k in E_GROUPS)
@@ -131,13 +145,13 @@ parts.append(f'''<title>ESVR 时变扩展实验记录</title>
 <style>
 :root{{--bg:#f3f6f8;--surface:#ffffff;--ink:#17222c;--ink2:#4b5967;--ink3:#7a8794;--line:#d8e0e6;--line2:#bcc7d1;
 --accent:#1d6b86;--accent-soft:#e0eef3;--good:#2b7a4b;--good-soft:#e1f1e6;--warn:#9a6414;--warn-soft:#f6ecd8;--bad:#a13a3a;--bad-soft:#f5e1e1;--info:#3f5f9b;--info-soft:#e3e9f5;--mono-bg:#eaf0f4;
---c-static:#7a8794;--c-deform:#b5651d;--c-esvr4d:#7b4fa3;--c-s4d:#1d6b86;}}
+--c-static:#7a8794;--c-deform:#b5651d;--c-esvr4d:#7b4fa3;--c-s4d:#1d6b86;--c-norm:#b3366b;--norm-soft:#f8e6ee;}}
 @media (prefers-color-scheme: dark){{:root:not([data-theme="light"]){{--bg:#12181d;--surface:#192129;--ink:#e6ecf1;--ink2:#aeb9c4;--ink3:#7a8794;--line:#28323c;--line2:#3a4652;
 --accent:#5fb0cc;--accent-soft:#1a3440;--good:#5fbd86;--good-soft:#173324;--warn:#d9a24a;--warn-soft:#3a2d14;--bad:#e07a7a;--bad-soft:#3d1f1f;--info:#8fb0e6;--info-soft:#1e2a40;--mono-bg:#1f2a33;
---c-static:#93a0ad;--c-deform:#d98d4a;--c-esvr4d:#b08ad6;--c-s4d:#5fb0cc;}}}}
+--c-static:#93a0ad;--c-deform:#d98d4a;--c-esvr4d:#b08ad6;--c-s4d:#5fb0cc;--c-norm:#e87fa8;--norm-soft:#3a1f2b;}}}}
 :root[data-theme="dark"]{{--bg:#12181d;--surface:#192129;--ink:#e6ecf1;--ink2:#aeb9c4;--ink3:#7a8794;--line:#28323c;--line2:#3a4652;
 --accent:#5fb0cc;--accent-soft:#1a3440;--good:#5fbd86;--good-soft:#173324;--warn:#d9a24a;--warn-soft:#3a2d14;--bad:#e07a7a;--bad-soft:#3d1f1f;--info:#8fb0e6;--info-soft:#1e2a40;--mono-bg:#1f2a33;
---c-static:#93a0ad;--c-deform:#d98d4a;--c-esvr4d:#b08ad6;--c-s4d:#5fb0cc;}}
+--c-static:#93a0ad;--c-deform:#d98d4a;--c-esvr4d:#b08ad6;--c-s4d:#5fb0cc;--c-norm:#e87fa8;--norm-soft:#3a1f2b;}}
 *{{box-sizing:border-box}}
 body{{background:var(--bg);color:var(--ink);font-family:"Public Sans","PingFang SC","Microsoft YaHei",system-ui,sans-serif;font-size:14.5px;line-height:1.6;margin:0;padding:48px 20px 96px}}
 .page{{max-width:980px;margin:0 auto}}
@@ -155,6 +169,7 @@ h1{{font-size:30px;letter-spacing:-.01em;margin-bottom:8px}}
 .panel h2{{font-size:17px;margin-bottom:4px}} .panel .lead{{color:var(--ink2);font-size:13px;margin:0 0 14px}}
 .chartwrap{{overflow-x:auto}} svg text{{font-family:"JetBrains Mono",monospace;font-size:11px;fill:var(--ink2)}}
 .legend{{display:flex;gap:18px;flex-wrap:wrap;font-size:12.5px;color:var(--ink2);margin-top:8px}} .legend i{{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px}}
+.lin{{overflow-x:auto;margin-top:6px}} .lin svg text{{font-family:"Public Sans","PingFang SC","Microsoft YaHei",system-ui,sans-serif}} .lin .nm{{font-size:12px;font-weight:600;fill:var(--ink)}} .lin .dt{{font-size:10.5px;fill:var(--ink2)}}
 .tip{{position:absolute;pointer-events:none;background:var(--ink);color:var(--bg);padding:4px 8px;border-radius:4px;font-size:12px;display:none;white-space:nowrap}}
 section.method{{margin-bottom:44px}}
 .mh{{display:flex;align-items:baseline;gap:12px;margin-bottom:4px}} .mh .letter{{font-family:"Spectral",serif;color:var(--accent);font-weight:600}} .mh h2{{font-size:20px}}
@@ -198,18 +213,20 @@ footer{{margin-top:48px;padding-top:18px;border-top:1px solid var(--line);font-s
 <div class="callout warn" style="margin-top:14px"><b>所有数字都是训练集拟合质量。</b>全部实验用全 90 帧训练,从未做过留出时间点的验证;因此本页不能回答“模型是否学到了可插值的连续运动”,动图也只是把 90 个训练时刻串起来,帧间没有插值。这是自项目交接起就存在、至今未补的最大空白。另:2026-09-22 起每次运行会写 <code>voxelizer.json</code>(加载的 CUDA 扩展路径与 SHA256),并拒绝外来扩展;各行的“核”标签是对更早运行的事后判定,依据见 A 节与 D.2 说明。</div>
 </header>
 <div class="stats">
-<div class="stat"><div class="l">当前最佳动态模型(G 节)</div><b class="hero">53.25 dB</b><div class="s">归一化显式 4D · 40 万基元 · 13.6 MB fp16;加法 Scaffold4D 最佳 {best_fix["psnr"]:.2f} dB</div></div>
+<div class="stat"><div class="l">当前最佳动态模型(G 节)</div><b class="hero">54.94 dB</b><div class="s">W2:Scaffold4D + 归一化 + 数据初始化 · 39.8 MB fp32 / 20.1 MB fp16;最小的是显式 4D N4A 53.25 dB · 13.6 MB fp16;加法 Scaffold4D 最佳 {best_fix["psnr"]:.2f} dB</div></div>
 <div class="stat"><div class="l">逐帧 ESVR,90 帧(修复核)</div><b>49.52 dB</b><div class="s">天花板配方 S5b · 555.6 MB;ESVR 自带配方 S1b 41.21 dB · 93.8 MB</div></div>
 <div class="stat"><div class="l">Scaffold4D 已完成运行</div><b>{n_s4d + 11}</b><div class="s">含 15 组未修复核(作废)、11 组筛选、修复核完整训练 {n_s4d - 17} 组</div></div>
 <div class="stat"><div class="l">目标(已达成)</div><b>50 dB</b><div class="s">压缩前模型尽量小;静态单帧要 14 万基元 / 67k 步才到。探针:只训 10 帧、每帧优化 ×9 也只到 41.2(D.8)</div></div>
 </div>
 <div class="panel">
 <h2>质量 – 模型大小总览</h2>
-<p class="lead">横轴为推理所需权重的 float32 大小(对数),纵轴为 90 帧平均 PSNR。灰点是逐帧独立训练的静态 ESVR;淡蓝点是用未修复 CUDA 核跑的 Scaffold4D 消融(作废,仅作记录)和只训 10 帧的探针 K1(不与 90 帧可比)。悬停查看名称。</p>
+<p class="lead">横轴为推理所需权重的 float32 大小(对数),纵轴为 90 帧平均 PSNR。灰点是逐帧独立训练的静态 ESVR(S1b / S5b 为修复核 90 帧实跑,其余为单帧 × 90 外推);玫红色是归一化合成的运行(2026-09-26 起);jet_Y_OH 是另一个数据集,不画在这里;只跑了第 1 帧的对照(S1n / S1nr / S5n / S1d / S5d)也不画;淡蓝点是用未修复 CUDA 核跑的 Scaffold4D 消融(作废,仅作记录)和只训 10 帧的探针 K1(不与 90 帧可比)。悬停查看名称。</p>
 <div class="chartwrap" id="chart"></div>
-<div class="legend"><span><i style="background:var(--c-static)"></i>静态 ESVR(逐帧)</span><span><i style="background:var(--c-deform)"></i>Deformable-MLP</span><span><i style="background:var(--c-esvr4d)"></i>ESVR4D</span><span><i style="background:var(--c-s4d)"></i>Scaffold4D(修复核)</span><span><i style="background:var(--c-s4d);opacity:.35"></i>Scaffold4D(早期 / 未修复核)</span><span><i style="background:var(--good)"></i>Scaffold4D 训练后压缩(fp16 + 剪枝)</span></div>
+<div class="legend"><span><i style="background:var(--c-static)"></i>静态 ESVR(逐帧)</span><span><i style="background:var(--c-deform)"></i>Deformable-MLP</span><span><i style="background:var(--c-esvr4d)"></i>ESVR4D</span><span><i style="background:var(--c-s4d)"></i>Scaffold4D(修复核)</span><span><i style="background:var(--c-s4d);opacity:.35"></i>Scaffold4D(早期 / 未修复核)</span><span><i style="background:var(--good)"></i>训练后压缩(fp16 + 剪枝)</span><span><i style="background:var(--c-norm)"></i>Scaffold4D + 归一化(W1–W3)</span><span><i style="background:var(--c-norm);border-radius:1px;transform:rotate(45deg)"></i>显式 4D + 归一化(N4A/N4B)</span><span><i style="background:var(--surface);border:2px solid var(--c-norm);box-sizing:border-box"></i>逐帧归一化 ESVR(PN21/10/6)</span></div>
 </div>
 ''')
+
+parts.append(LINEAGE)
 
 # ---------- A static ----------
 parts.append('''<section class="method"><div class="mh"><span class="letter">A</span><h2>静态 ESVR 基线</h2></div>
@@ -496,20 +513,22 @@ parts.append(f'''<footer>评测协议:全部实验用全 90 帧训练(无留出)
 </div>
 <script>
 const P={json.dumps(points, ensure_ascii=False)};
-const C={{static:"var(--c-static)",deform:"var(--c-deform)",esvr4d:"var(--c-esvr4d)",s4d_old:"var(--c-s4d)",s4d_bad:"var(--c-s4d)",s4d_fix:"var(--c-s4d)",s4d_compact:"var(--good)"}};
+const C={{static:"var(--c-static)",deform:"var(--c-deform)",esvr4d:"var(--c-esvr4d)",s4d_old:"var(--c-s4d)",s4d_bad:"var(--c-s4d)",s4d_fix:"var(--c-s4d)",s4d_compact:"var(--good)",norm:"var(--c-norm)",normx:"var(--c-norm)",pfnorm:"var(--c-norm)"}};
 const W=920,H=340,L=52,R=16,T=14,Bm=40;
 const xs=P.map(p=>p.x),ys=P.map(p=>p.y);
-const xmin=1,xmax=700,ymin=20,ymax=51;
+const xmin=1,xmax=700,ymin=20,ymax=57;
 const X=v=>L+(Math.log10(v)-Math.log10(xmin))/(Math.log10(xmax)-Math.log10(xmin))*(W-L-R);
 const Y=v=>T+(ymax-v)/(ymax-ymin)*(H-T-Bm);
 let s=`<svg viewBox="0 0 ${{W}} ${{H}}" width="100%" style="max-width:${{W}}px;display:block;overflow:visible">`;
-for(const g of [25,30,35,40,45,50]){{s+=`<line x1="${{L}}" x2="${{W-R}}" y1="${{Y(g)}}" y2="${{Y(g)}}" stroke="var(--line)"/><text x="${{L-8}}" y="${{Y(g)+4}}" text-anchor="end">${{g}} dB</text>`;}}
+for(const g of [25,30,35,40,45,50,55]){{s+=`<line x1="${{L}}" x2="${{W-R}}" y1="${{Y(g)}}" y2="${{Y(g)}}" stroke="var(--line)"/><text x="${{L-8}}" y="${{Y(g)+4}}" text-anchor="end">${{g}} dB</text>`;}}
 for(const g of [1,2,5,10,20,50,100,200,500]){{s+=`<line y1="${{T}}" y2="${{H-Bm}}" x1="${{X(g)}}" x2="${{X(g)}}" stroke="var(--line)" stroke-dasharray="2 4"/><text x="${{X(g)}}" y="${{H-Bm+16}}" text-anchor="middle">${{g}}</text>`;}}
 s+=`<text x="${{(L+W-R)/2}}" y="${{H-6}}" text-anchor="middle">模型大小 (MB, log)</text>`;
 s+=`<line x1="${{L}}" x2="${{W-R}}" y1="${{Y(50)}}" y2="${{Y(50)}}" stroke="var(--accent)" stroke-dasharray="6 4" opacity=".7"/><text x="${{W-R-4}}" y="${{Y(50)-5}}" text-anchor="end" style="fill:var(--accent)">目标 50 dB</text>`;
 s+=`<line x1="${{L}}" x2="${{W-R}}" y1="${{Y(28.80)}}" y2="${{Y(28.80)}}" stroke="var(--ink3)" stroke-dasharray="2 4"/><text x="${{L+6}}" y="${{Y(28.80)-5}}" style="fill:var(--ink3)">零模型:复制上一帧,89 对均值 28.80 dB(2026-09-22 修正;此前标的 30.39 只是第 1→2 帧一对)</text>`;
-for(const p of P){{const r=(p.s==="s4d_fix"||p.s==="s4d_compact")?7:(p.s==="static"?6:5);const op=p.f||p.s==="s4d_old"?.35:1;const st=(p.s==="s4d_fix"||p.s==="s4d_compact")?`stroke="var(--ink)" stroke-width="1.5"`:"";
-s+=`<circle class="pt" cx="${{X(p.x)}}" cy="${{Y(p.y)}}" r="${{r}}" fill="${{C[p.s]}}" opacity="${{op}}" ${{st}} data-l="${{p.l}} · ${{p.x}} MB · ${{p.y.toFixed(2)}} dB"/>`;}}
+for(const p of P){{const big=["s4d_fix","s4d_compact","norm","normx","pfnorm"].includes(p.s);const r=big?7:(p.s==="static"?6:5);const op=p.f||p.s==="s4d_old"?.35:1;const st=big?`stroke="var(--ink)" stroke-width="1.5"`:"";const dl=`data-l="${{p.l}} · ${{p.x}} MB · ${{p.y.toFixed(2)}} dB"`;const cx=X(p.x),cy=Y(p.y);
+if(p.s==="normx"){{s+=`<rect class="pt" x="${{cx-6}}" y="${{cy-6}}" width="12" height="12" transform="rotate(45 ${{cx}} ${{cy}})" fill="${{C[p.s]}}" ${{st}} ${{dl}}/>`;}}
+else if(p.s==="pfnorm"){{s+=`<circle class="pt" cx="${{cx}}" cy="${{cy}}" r="6" fill="var(--surface)" stroke="${{C[p.s]}}" stroke-width="2.5" ${{dl}}/>`;}}
+else{{s+=`<circle class="pt" cx="${{cx}}" cy="${{cy}}" r="${{r}}" fill="${{C[p.s]}}" opacity="${{op}}" ${{st}} ${{dl}}/>`;}}}}
 s+=`</svg><div class="tip" id="tip"></div>`;
 const el=document.getElementById("chart");el.style.position="relative";el.innerHTML=s;
 const tip=document.getElementById("tip");
