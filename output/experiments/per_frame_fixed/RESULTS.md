@@ -44,3 +44,34 @@ ESVR's densification, dark pruning and opacity resets wash out the initial
 layout; a data-sampled start does not help its own pipeline. The random init
 of the per-frame baseline is therefore not a handicap. (S5d ran concurrently
 with other jobs: 19.7 min vs 7.2 min for S5b.)
+
+## ESVR's own recipes with normalized composition, frame 1 (2026-09-27)
+
+`train_chunk.py --composition normalized` (commit 29a506e): one extra value s per
+primitive, the opacity slot holds the weight w, V = Σ C w s K / max(Σ C w K, 0.05 C),
+C = 100, two voxelizer calls in `gaussian_renderer.query`. ESVR's rules act on w:
+dark pruning and `count_query` use the drawn amplitude C·w (never-drawn threshold
+(1/255)/C); clone/split/prune carry s; s uses the intensity's LR schedule; init is
+ESVR's random init with w = s = 0.1. Loss, LRs, subvolume sampling, densify/prune
+schedule and iteration counts are S1b / S5b unchanged. Analytic gradients of the
+CUDA path match an exact PyTorch copy of forward.cu to 0.03-0.3 %.
+
+| Run | Change vs S1b / S5b | PSNR | Primitives | Voxels below the floor (Σ C w K < 5) |
+|---|---|---:|---:|---:|
+| S1b (additive) | — | 41.81 | 21,237 | — |
+| S1b_recheck | none (regression check after the patch; training is not seeded) | 41.76 | 21,600 | — |
+| S1n | normalized, literal intensity reset (w ≤ 2/255 every reset) | 45.02 | 39,017 | **83.1 %** |
+| **S1nr** | S1n without the periodic reset (`--no_opacity_reset`) | **53.28** | 50,833 | 0.025 % |
+| S5b (additive) | — | 49.63 | 138,614 | — |
+| S5n | normalized, literal reset | 53.25 | 185,883 | **86.6 %** |
+| S5nr | S5n without the reset | running (90-frame lane 0) | | |
+
+All normalized PSNRs were re-checked by reloading the saved PLY (identical).
+The literal reset pushes every weight to ≤ 2/255 and the weights never climb back:
+in most voxels the denominator is then floored and V = Σ 20 w s K, an additive sum
+again (it carries 91.5 % of S1n's squared error). Without the reset S1nr is a true
+weighted average (median Σ C w K = 204). The normalized runs keep more primitives
+than their additive counterparts (densification and dark pruning behave
+differently), so these are not equal-size comparisons.
+90-frame S1nr (2 lanes) and S5nr (3 lanes, after jet J2b) are queued by
+`experiments/queue_esvr_normalized.sh`.
