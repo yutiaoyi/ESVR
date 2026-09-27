@@ -15,3 +15,6 @@ run N_norm21k_3000     --mode normalized --n 21000 --steps 3000
 run N_norm64k_3000     --mode normalized --n 64000 --steps 3000
 run N_add139k_3000     --mode additive   --n 139000 --steps 3000
 run N_norm32k_3000_f45 --mode normalized --n 32000 --steps 3000 --frame 44
+# 2026-09-27 fairness: 2x2 composition x initialisation on frame 1 (ESVR's own init is uniform random, value 0.1, NN scale).
+run N_norm32k_3000_randinit --mode normalized --n 32000 --steps 3000 --init random
+run N_add32k_3000_randinit  --mode additive   --n 32000 --steps 3000 --init random

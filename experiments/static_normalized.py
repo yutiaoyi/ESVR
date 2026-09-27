@@ -39,6 +39,16 @@ def render(xyz, scale, rot, amp, shape):
     return query(pc, [0.0, 0.0, 0.0], shape, [2.0 * s / max(shape) for s in shape], PIPE)["vol"]
 
 
+def init_random(gt, n, gen):
+    """ESVR's create_random_onthefly: centres uniform in the volume, isotropic
+    scale = sqrt(mean squared distance to the 3 nearest neighbours) (distCUDA2),
+    every primitive at value 0.1; the data is not looked at."""
+    from simple_knn._C import distCUDA2
+    xyz = torch.rand(n, 3, device="cuda", generator=gen) * 2 - 1
+    scale = torch.sqrt(torch.clamp_min(distCUDA2(xyz), 1e-7))
+    return xyz, torch.full((n,), 0.1, device="cuda"), scale
+
+
 def init_points(gt, n, gen):
     shape = gt.shape
     g = gt.cuda()
@@ -74,6 +84,8 @@ def main():
     p.add_argument("--C", type=float, default=100.0)
     p.add_argument("--k", type=float, default=0.15, help="Additive init amplitude = value * k")
     p.add_argument("--relocate", default="0.35,0.55,0.75", help="Fractions of training at which the 8 %% lowest-support primitives are re-seeded at max-error voxels ('' = off)")
+    p.add_argument("--init", choices=("data", "random"), default="data",
+                   help="data: sampled from the frame (default); random: ESVR's uniform init, value 0.1, NN scale (additive amplitude 0.1, --k ignored)")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--output", required=True)
     args = p.parse_args()
@@ -83,10 +95,14 @@ def main():
     shape = tuple(gt.shape)
     step_len = 2 / max(shape)
     gen = torch.Generator(device="cuda").manual_seed(args.seed)
-    xyz0, values, s0 = init_points(gt, args.n, gen)
     n = args.n
+    if args.init == "random":
+        xyz0, values, s_each = init_random(gt, n, gen)
+        log_scale = torch.nn.Parameter(torch.log(s_each)[:, None].repeat(1, 3).clamp(math.log(0.3 * step_len), math.log(8 * step_len)).contiguous())
+    else:
+        xyz0, values, s0 = init_points(gt, n, gen)
+        log_scale = torch.nn.Parameter(torch.full((n, 3), math.log(s0), device="cuda"))
     xyz = torch.nn.Parameter(xyz0.clone())
-    log_scale = torch.nn.Parameter(torch.full((n, 3), math.log(s0), device="cuda"))
     rot = torch.nn.Parameter(torch.tensor([[1.0, 0, 0, 0]], device="cuda").repeat(n, 1))
     logit = lambda v: torch.log(v.clamp(1e-4, 1 - 1e-4) / (1 - v.clamp(1e-4, 1 - 1e-4)))
     if args.mode == "normalized":
@@ -94,7 +110,7 @@ def main():
         w = torch.nn.Parameter(torch.zeros(n, 1, device="cuda"))   # sigmoid(0) = 0.5
         extra = [{"params": [s], "lr": args.lr, "name": "s"}, {"params": [w], "lr": args.lr, "name": "w"}]
     else:
-        a = torch.nn.Parameter(logit(values * args.k)[:, None])
+        a = torch.nn.Parameter(logit(values * (1.0 if args.init == "random" else args.k))[:, None])
         extra = [{"params": [a], "lr": args.lr, "name": "a"}]
     opt = torch.optim.Adam([{"params": [xyz], "lr": args.lr / 8 * step_len, "name": "xyz"},
                             {"params": [log_scale], "lr": args.lr, "name": "scale"},
