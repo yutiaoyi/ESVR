@@ -61,7 +61,7 @@ NODES = [
     ("J2b", "J1", "jet J2b · +归一化 +数据初始化", "进行中", "run"),
 ]
 
-BW, BH, COLW, ROWH, PAD = 196, 38, 222, 56, 12
+BW, BH, COLW, ROWH, PAD = 206, 38, 232, 56, 12
 BH_NOTE = 52
 STYLE = {  # fill, stroke, width, dash, opacity
     "root": ("var(--accent-soft)", "var(--accent)", 1.5, "", 1),
