@@ -51,6 +51,11 @@ def query(
 
     means3D = pc.get_xyz
     density = pc.get_opacity
+    normalized = getattr(pc, "composition", "additive") == "normalized"
+    if normalized:
+        if ghost_pc is not None:
+            raise NotImplementedError("normalized composition supports full-volume training only (no ghost cells)")
+        density = density * pc.norm_C
 
     if ghost_pc is not None: 
         # print('ghost pc num:', ghost_pc.get_xyz.shape[0])
@@ -82,6 +87,17 @@ def query(
         rotations=rotations,
         cov3D_precomp=cov3D_precomp,
     )
+    if normalized:
+        # The voxelizer is linear in the amplitude: vol_pred is the denominator sum C w K;
+        # a second call with amplitude C w s gives the numerator.
+        num, _ = voxelizer(
+            means3D=means3D,
+            opacities=density * pc.get_value,
+            scales=scales,
+            rotations=rotations,
+            cov3D_precomp=cov3D_precomp,
+        )
+        vol_pred = num / vol_pred.clamp_min(pc.norm_eps * pc.norm_C)
 
     radii_max = torch.max(torch.stack((radii[0], radii[1], radii[2])), dim=0)[0]
 
@@ -128,6 +144,8 @@ def count_query(
 
     means3D = pc.get_xyz
     density = pc.get_opacity
+    if getattr(pc, "composition", "additive") == "normalized":
+        density = density * pc.norm_C   # count what the kernel draws (amplitude C w)
 
     scales = None
     rotations = None

@@ -19,6 +19,12 @@ case "$recipe" in
   # 2026-09-27 fairness control: the same recipes with data-sampled init (train_chunk --init_from_data)
   S1d) scans=2800; m=1; init=20000;  keep=0.66; extra=--init_from_data ;;
   S5d) scans=8400; m=3; init=150000; keep=0.0;  extra=--init_from_data ;;
+  # 2026-09-27: ESVR's own recipes with normalized composition (train_chunk --composition normalized);
+  # everything else identical to S1b / S5b (random init, loss, LRs, densify/prune schedule, iterations).
+  S1n) scans=2800; m=1; init=20000;  keep=0.66; extra="--composition normalized" ;;
+  S5n) scans=8400; m=3; init=150000; keep=0.0;  extra="--composition normalized" ;;
+  # regression check after the normalized patch: must reproduce S1b (default additive path untouched)
+  S1b_recheck) scans=2800; m=1; init=20000; keep=0.66 ;;
   *) echo "unknown recipe $recipe"; exit 1 ;;
 esac
 OUT=output/experiments/per_frame_fixed/$recipe

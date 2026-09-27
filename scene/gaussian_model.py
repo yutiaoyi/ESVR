@@ -44,6 +44,12 @@ class GaussianModel:
         self._scaling = torch.empty(0)
         self._rotation = torch.empty(0)
         self._opacity = torch.empty(0)
+        # Normalized composition (opt-in, 2026-09-27): V = sum C w s K / max(sum C w K, eps C).
+        # _opacity then holds the weight w and _value the value s; "additive" is ESVR unchanged.
+        self._value = torch.empty(0)
+        self.composition = "additive"
+        self.norm_C = 100.0
+        self.norm_eps = 0.05
         self.max_radii2D = torch.empty(0)
         self.xyz_gradient_accum = torch.empty(0)
         self.denom = torch.empty(0)
@@ -56,8 +62,12 @@ class GaussianModel:
         self.setup_functions()
         self.mu_factor = 400*math.sqrt(2 * 3.14159265358979323846)
 
+    @property
+    def normalized(self):
+        return self.composition == "normalized"
+
     def capture(self):
-        return (
+        state = (
             self._xyz,
             self._scaling,
             self._rotation,
@@ -68,8 +78,13 @@ class GaussianModel:
             self.optimizer.state_dict(),
             self.spatial_lr_scale,
         )
+        return state + (self._value,) if self.normalized else state
     
     def restore(self, model_args, training_args):
+        if len(model_args) == 10:
+            self.composition = "normalized"
+            self._value = model_args[9]
+            model_args = model_args[:9]
         (self._xyz, 
         self._scaling, 
         self._rotation, 
@@ -99,6 +114,15 @@ class GaussianModel:
     @property
     def get_opacity(self):
         return self.opacity_activation(self._opacity)
+
+    @property
+    def get_value(self):
+        return self.opacity_activation(self._value)
+
+    @property
+    def dark_threshold(self):
+        # The kernel skips alpha < 1/255; a normalized primitive is drawn at amplitude C*w.
+        return 1 / 255 / self.norm_C if self.normalized else 1 / 255
     
     def get_covariance(self, scaling_modifier = 1):
         return self.covariance_activation(self.get_scaling, scaling_modifier, self._rotation)
@@ -114,6 +138,8 @@ class GaussianModel:
             {'params': [self._scaling], 'lr': training_args.scaling_lr_init * self.spatial_lr_scale, "name": "scaling"},
             {'params': [self._rotation], 'lr': training_args.rotation_lr_init * self.spatial_lr_scale, "name": "rotation"}
         ]
+        if self.normalized:  # the value follows the intensity's schedule
+            l.append({'params': [self._value], 'lr': training_args.opacity_lr_init * self.spatial_lr_scale, "name": "value"})
 
         self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
         self.xyz_scheduler_args = get_expon_lr_func(
@@ -144,7 +170,7 @@ class GaussianModel:
             if param_group["name"] == "xyz":
                 lr = self.xyz_scheduler_args(iteration)
                 param_group["lr"] = lr
-            if param_group["name"] == "opacity":
+            if param_group["name"] in ("opacity", "value"):
                 lr = self.opacity_scheduler_args(iteration)
                 param_group["lr"] = lr
             if param_group["name"] == "scaling":
@@ -162,6 +188,8 @@ class GaussianModel:
             l.append('scale_{}'.format(i))
         for i in range(self._rotation.shape[1]):
             l.append('rot_{}'.format(i))
+        if self.normalized:
+            l.append('value')
         return l
 
     def save_ply(self, path, offset=None):
@@ -187,7 +215,8 @@ class GaussianModel:
 
         elements = np.empty(xyz.shape[0], dtype=dtype_full)
         
-        attributes = np.concatenate((xyz, opacities, scale, rotation), axis=1)
+        parts = (xyz, opacities, scale, rotation) + ((self._value.detach().cpu().numpy(),) if self.normalized else ())
+        attributes = np.concatenate(parts, axis=1)
         elements[:] = list(map(tuple, attributes))
         el = PlyElement.describe(elements, 'vertex')
         PlyData([el]).write(path)
@@ -221,6 +250,10 @@ class GaussianModel:
         self._opacity = nn.Parameter(torch.tensor(opacities, dtype=torch.float, device="cuda").requires_grad_(True))
         self._scaling = nn.Parameter(torch.tensor(scales, dtype=torch.float, device="cuda").requires_grad_(True))
         self._rotation = nn.Parameter(torch.tensor(rots, dtype=torch.float, device="cuda").requires_grad_(True))
+        if "value" in [p.name for p in plydata.elements[0].properties]:
+            self.composition = "normalized"
+            values = np.asarray(plydata.elements[0]["value"])[..., np.newaxis]
+            self._value = nn.Parameter(torch.tensor(values, dtype=torch.float, device="cuda").requires_grad_(True))
         
         self.max_radii2D = torch.zeros((xyz.shape[0]), device="cuda")
         self.xyz_gradient_accum = torch.zeros((xyz.shape[0], 1), device="cuda")
@@ -268,6 +301,8 @@ class GaussianModel:
         self._opacity = optimizable_tensors["opacity"]
         self._scaling = optimizable_tensors["scaling"]
         self._rotation = optimizable_tensors["rotation"]
+        if self.normalized:
+            self._value = optimizable_tensors["value"]
 
         self.xyz_gradient_accum = self.xyz_gradient_accum[valid_points_mask]
 
@@ -296,17 +331,21 @@ class GaussianModel:
 
         return optimizable_tensors
 
-    def densification_postfix(self, new_xyz, new_opacities, new_scaling, new_rotation):
+    def densification_postfix(self, new_xyz, new_opacities, new_scaling, new_rotation, new_value=None):
         d = {"xyz": new_xyz,
         "opacity": new_opacities,
         "scaling" : new_scaling,
         "rotation" : new_rotation}
+        if self.normalized:
+            d["value"] = new_value
 
         optimizable_tensors = self.cat_tensors_to_optimizer(d)
         self._xyz = optimizable_tensors["xyz"]
         self._opacity = optimizable_tensors["opacity"]
         self._scaling = optimizable_tensors["scaling"]
         self._rotation = optimizable_tensors["rotation"]
+        if self.normalized:
+            self._value = optimizable_tensors["value"]
 
         self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
@@ -337,8 +376,9 @@ class GaussianModel:
         new_scaling = self.scaling_inverse_activation(self.get_scaling[selected_pts_mask].repeat(N,1) / (0.8*N))
         new_rotation = self._rotation[selected_pts_mask].repeat(N,1)
         new_opacity = self._opacity[selected_pts_mask].repeat(N,1)
+        new_value = self._value[selected_pts_mask].repeat(N,1) if self.normalized else None
 
-        self.densification_postfix(new_xyz, new_opacity, new_scaling, new_rotation)
+        self.densification_postfix(new_xyz, new_opacity, new_scaling, new_rotation, new_value)
 
         prune_filter = torch.cat((selected_pts_mask, torch.zeros(N * selected_pts_mask.sum(), device="cuda", dtype=bool)))
         self.prune_points(prune_filter)
@@ -366,8 +406,9 @@ class GaussianModel:
         new_opacities = self._opacity[selected_pts_mask]
         new_scaling = self._scaling[selected_pts_mask]
         new_rotation = self._rotation[selected_pts_mask]
+        new_value = self._value[selected_pts_mask] if self.normalized else None
 
-        self.densification_postfix(new_xyz, new_opacities, new_scaling, new_rotation)
+        self.densification_postfix(new_xyz, new_opacities, new_scaling, new_rotation, new_value)
 
     def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size, bbox, iter, chunk_size=None):
         grads = self.xyz_gradient_accum / self.denom
@@ -378,6 +419,8 @@ class GaussianModel:
         self.densify_and_split(grads, max_grad, extent)
         # print('After densification, # of points:', self.get_xyz.shape[0])
 
+        if self.normalized:  # min_opacity is the 1/255 kernel cutoff; normalized amplitude is C*w
+            min_opacity = min_opacity / self.norm_C
         prune_mask = (self.get_opacity < min_opacity).squeeze()
 
         xyz = self.get_xyz
@@ -456,7 +499,7 @@ class GaussianModel:
     def prune_dark_gaussians(self):
         # print('before prune dark:', self.get_xyz.shape[0])
         opacity = self.get_opacity
-        prune_mask_bbox = (opacity < 1/255).squeeze()
+        prune_mask_bbox = (opacity < self.dark_threshold).squeeze()
         
 
         self.prune_points(prune_mask_bbox)
@@ -511,6 +554,9 @@ class GaussianModel:
         self._scaling = nn.Parameter(scales.requires_grad_(True))
         self._rotation = nn.Parameter(rots.requires_grad_(True))
         self._opacity = nn.Parameter(opacities.requires_grad_(True))
+        if self.normalized:  # value = GT there, weight = ESVR's initial intensity 0.1
+            self._value = nn.Parameter(inverse_sigmoid(g.flatten()[idx].clamp(1e-4, 1 - 1e-4)[:, None]).requires_grad_(True))
+            self._opacity = nn.Parameter(inverse_sigmoid(0.1 * torch.ones((num_start, 1), device="cuda")).requires_grad_(True))
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
 
     def create_random_onthefly(self, num_start : int, spatial_lr_scale : float, chunk_len : float):
@@ -550,4 +596,6 @@ class GaussianModel:
             self._scaling = nn.Parameter(scales.requires_grad_(True))
             self._rotation = nn.Parameter(rots.requires_grad_(True))
             self._opacity = nn.Parameter(opacities.requires_grad_(True))
+            if self.normalized:  # ESVR's initial intensity 0.1 becomes both the weight and the value
+                self._value = nn.Parameter(inverse_sigmoid(0.1 * torch.ones((fused_point_cloud.shape[0], 1), dtype=torch.float, device="cuda")).requires_grad_(True))
             self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")

@@ -170,6 +170,10 @@ def training(dataset, opt, pipe, checkpoint, debug_from, chunk_idx, dataset_name
     
     first_iter = 0
     gaussians = GaussianModel(x_chunk_size, y_chunk_size, z_chunk_size)
+    if args.composition == "normalized":
+        if chunk_len != 2.0:
+            raise ValueError("--composition normalized supports full-volume training only")
+        gaussians.composition = "normalized"
     scene = Scene(dataset, gaussians)
     if gaussians._xyz.shape[0] == 0 :
         if args.init_from_data:
@@ -591,6 +595,8 @@ if __name__ == "__main__":
     )
     parser.add_argument("--subvol_size", type=int, default=64, help="Size of the subvolume to use for training")
     parser.add_argument("--init_num", type=int, default=100_000, help="Number of Gaussians to initialize")
+    parser.add_argument("--composition", choices=("additive", "normalized"), default="additive",
+                        help="additive = ESVR; normalized = sum C w s K / max(sum C w K, 0.05 C), weight in the opacity slot, extra value per primitive")
     parser.add_argument("--init_from_data", action="store_true", help="Data-sampled initial centres and intensities (fairness control); default is ESVR's uniform random init")
     parser.add_argument("--pruning_remainweight", type=float, default=0.66, help="Fraction of Gaussians to keep during global pruning")
     parser.add_argument("--darkpruning_iter", nargs="+", type=int, default=[1,2,3])
