@@ -27,6 +27,8 @@ NODES = [
     ("N4A", "sn", "N4A · 显式 4D + 归一化", "53.25 dB · 27.2 MB", "norm",
      "表示 = W 系列去掉锚点/MLP · 配方不同"),
     ("N4B", "N4A", "N4B · 初始时间半宽 4 帧", "53.07 dB · 27.2 MB", "norm"),
+    ("N4W", "N4A", "N4W · 换成 W2 的训练配方", "585k / 1198k / 400k 基元 · 进行中", "run",
+     "与 W2 只差表示:无锚点/MLP、数量固定"),
     ("PN", "sn", "PN21 / PN10 / PN6 · 逐帧 90 帧", "51.05 / 43.70 / 38.51 dB", "norm"),
     # other dynamic families
     ("deform", None, "Deformable 3DGS → ESVR", "B 节 · 最佳 28.90 dB", "sup"),

@@ -37,3 +37,25 @@ composition changed) is running as `next/W1`/`W2`.
 
 Not done yet: training time alone on the GPU; SZ3 / TTHRESH on the same data;
 quantisation below fp16; jet_Y_OH.
+
+## N4W: the N4A representation trained with W2's recipe (2026-09-27, running)
+
+Question: at equal training recipe, is Scaffold4D (anchors + shared MLPs) more compact than
+explicit 4D primitives? N4A cannot answer it: it used 90k steps, L1 only, cosine LR, scale floor
+0.3 voxel, sigma_max 1000, while W2 used 240k steps, 0.8 L1 + 0.2 SSIM + 0.01 volume term,
+log-linear decay to 1 %, floor 0.5 voxel, sigma_max 100. The N4W lanes
+(`experiments/run_norm4d.sh W585|W1198|W400`, commit 049b6e5) use W2's recipe for everything
+except the representation itself.
+
+| Lane | Primitives | fp32 | Matched to |
+|---|---:|---:|---|
+| N4W_585k_Wrecipe_240k | 585,000 | 39.8 MB | W2's size |
+| N4W_1198k_Wrecipe_240k | 1,198,420 | 81.5 MB | W2's number of children |
+| N4W_400k_Wrecipe_240k | 400,000 | 27.2 MB | N4A (recipe effect alone) |
+
+Remaining differences, inherent to the two representations: W2 grows anchors from 6,000 to
+119,842 during the first half of training, while the explicit primitives are a fixed population
+from the start; W2's children start at the data mean value (decoded by the MLP), the explicit
+primitives at the ground-truth value of the voxel they were sampled from (favours explicit).
+The Scaffold4D side of the size curve is W4 (60k anchor cap, 19.9 MB), W2 (39.8 MB) and W1 (49.8 MB).
+Smoke test: 1.2M primitives peak 0.8 GB, ~0.13 s/step with other jobs on the GPU.
