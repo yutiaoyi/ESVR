@@ -198,10 +198,10 @@ footer{{margin-top:48px;padding-top:18px;border-top:1px solid var(--line);font-s
 <div class="callout warn" style="margin-top:14px"><b>所有数字都是训练集拟合质量。</b>全部实验用全 90 帧训练,从未做过留出时间点的验证;因此本页不能回答“模型是否学到了可插值的连续运动”,动图也只是把 90 个训练时刻串起来,帧间没有插值。这是自项目交接起就存在、至今未补的最大空白。另:2026-09-22 起每次运行会写 <code>voxelizer.json</code>(加载的 CUDA 扩展路径与 SHA256),并拒绝外来扩展;各行的“核”标签是对更早运行的事后判定,依据见 A 节与 D.2 说明。</div>
 </header>
 <div class="stats">
-<div class="stat"><div class="l">当前最佳动态模型</div><b class="hero">{best_fix["psnr"]:.2f} dB</b><div class="s">Scaffold4D · {best_fix["anchors"]//1000}k 锚点 · {best_fix["steps"]//1000}k 步 · 压缩后 {compact.get(best_key, {}).get("mb_after", best_fix["mb"]):.1f} MB</div></div>
-<div class="stat"><div class="l">静态天花板(单帧,修复核)</div><b>49.67 dB</b><div class="s">139k 基元 · 67k 步 · 6.1 MB/帧;21k 基元 / 22k 步 = 41.72</div></div>
+<div class="stat"><div class="l">当前最佳动态模型(G 节)</div><b class="hero">53.25 dB</b><div class="s">归一化显式 4D · 40 万基元 · 13.6 MB fp16;加法 Scaffold4D 最佳 {best_fix["psnr"]:.2f} dB</div></div>
+<div class="stat"><div class="l">逐帧 ESVR,90 帧(修复核)</div><b>49.52 dB</b><div class="s">天花板配方 S5b · 555.6 MB;ESVR 自带配方 S1b 41.21 dB · 93.8 MB</div></div>
 <div class="stat"><div class="l">Scaffold4D 已完成运行</div><b>{n_s4d + 11}</b><div class="s">含 15 组未修复核(作废)、11 组筛选、修复核完整训练 {n_s4d - 17} 组</div></div>
-<div class="stat"><div class="l">目标</div><b>50 dB</b><div class="s">压缩前模型尽量小;静态单帧要 14 万基元 / 67k 步才到。探针:只训 10 帧、每帧优化 ×9 也只到 41.2(D.8)</div></div>
+<div class="stat"><div class="l">目标(已达成)</div><b>50 dB</b><div class="s">压缩前模型尽量小;静态单帧要 14 万基元 / 67k 步才到。探针:只训 10 帧、每帧优化 ×9 也只到 41.2(D.8)</div></div>
 </div>
 <div class="panel">
 <h2>质量 – 模型大小总览</h2>
@@ -444,6 +444,19 @@ for name, what, kind, tag, note, best in JET:
         parts.append(row(name, what, f"output/scaffold4d/jet/{name}/", "—", "none", pill("run"), "—", counts="—"))
 parts.append('''</tbody></table></div>
 <div class="callout">jet 的 PSNR 与 vorts 不可直接比较:值域归一化后 jet 的高值区只占体素的百分之几(第 60 帧 24% 体素高于最大值的 5%,均值 0.0244),是 ESVR 论文更擅长的稀疏各向异性场;但每帧体素数是 vorts 的 20 倍、每块监督覆盖只有 1/24,训练量相对不足。这一节先记录基线:J1 在 2.1 小时内到 42.8 dB / 压缩后 21.9 MB(924×),是首次在 vorts 之外的数据上跑通完整流程;下一步的自然方向是提高上限(锚点第 1 万步即长满)和步数(曲线未收敛)。</div>
+</section>
+<section class="method"><div class="mh"><span class="letter">G</span><h2>归一化合成:瓶颈诊断与 50 dB 结果(2026-09-26)</h2></div>
+<div class="lineage">把 ESVR 的加法求和 V = Σ aK 换成归一化核回归 V = Σ wKs / max(Σ wK, ε)(Martin 等 2026,arXiv 2609.16024;Image-GS):每个基元代表“这一带的值”,而不是一个需要叠加出数值的鼓包。体素化核对强度是线性的,分子、分母各调用一次、相除即可,CUDA 核未改动。</div>
+<div class="tablewrap"><table><thead><tr><th>实验</th><th>设置</th><th class="num">结果</th><th>结论</th></tr></thead><tbody>
+<tr><td class="name">单帧,加法 vs 归一化</td><td class="what">第 1 帧;同初始化(数据采样)、同优化器、3,000 步整体积,只换合成方式</td><td class="num">3.2 万基元:42.84 → <b>55.75</b><br><span class="sub">2.1 万:52.62 · 1 万:45.30 · 6.4 万:58.76 · 第 45 帧 3.2 万:53.56</span></td><td>同基元数 +12.9 dB;2.1 万基元(ESVR 默认预算)即超过 50 dB,加法要 13.9 万才到 49.6。重定位无增益。原因:vorts 九成体素有非零底值,加法只能靠大量正鼓包重叠堆平,产生起伏。</td></tr>
+<tr><td class="name">解放 P3 的单帧切片(U1–U3)</td><td class="what">P3 第 1 帧的 5.8 万个椭球导出为独立 ESVR 参数,用 ESVR 原版优化器训 22,400 步</td><td class="num">40.27 → <b>44.38</b><br><span class="sub">同数量随机初始化 33.21;带增密(强度重置)42.20</span></td><td>参数共享在单帧上约占 4 dB;学到的布局本身是好的。</td></tr>
+<tr><td class="name">显式加法 4D(X1)</td><td class="what">P3 的 18.2 万个有用孩子转为逐基元参数(去掉 MLP、保留跨帧共享),全部 90 帧训 6 万步</td><td class="num">40.96<br><span class="sub">11.6 MB / fp16 5.8 MB</span></td><td>只比 P3 多 0.37 dB:MLP 不是主要约束,代价主要在跨帧共享。</td></tr>
+<tr><td class="name">逐帧 ESVR,90 帧,修复核</td><td class="what">S1b = ESVR 自带配方;S5b = 天花板配方(15 万初始、×3、关全局剪枝)</td><td class="num">S1b 41.21 · 93.8 MB<br>S5b <b>49.52</b> · 555.6 MB</td><td>此前修复核上的逐帧数字都只来自第 1 帧(最容易的一帧)。</td></tr>
+<tr class="best"><td class="name"><b>N4A:归一化显式 4D</b></td><td class="what">40 万个显式 4D 基元 × 17 浮点(位置、时刻、尺度、旋转、数值、权重、时间宽度、速度);沿用 4D-Scaffold-GS 的时间门与线性运动;数据采样初始化,初始半宽 2 帧;9 万步整体积</td><td class="num"><b>53.25</b><br><span class="sub">48.42 – 54.58;27.2 MB fp32 / <b>13.6 MB fp16(53.23)</b></span></td><td>90 帧全部超过 48.4 dB,均值比逐帧天花板高 3.7 dB、体积小 20–40 倍,比加法 Scaffold4D 最佳高 12.7 dB。独立重载逐帧一致。最弱帧为序列两端和变化最快的第 21–22 帧。</td></tr>
+<tr><td class="name">N4B</td><td class="what">同 N4A,初始半宽 4 帧</td><td class="num">53.07<br><span class="sub">47.51 – 54.43</span></td><td>初始时间宽度影响很小。</td></tr>
+<tr><td class="name">W1 / W2:Scaffold4D + 归一化</td><td class="what">P3 配方完全不变,只加 <code>--composition normalized</code>(W2 另加数据初始化)</td><td class="num">进行中<br><span class="sub">2 万步三帧 42.88 / 43.03;W2 4 万步 45.59(P3 最终 40.22)</span></td><td>主方法 + 归一化的单变量对照。</td></tr>
+</tbody></table></div>
+<div class="callout"><b>瓶颈按大小排序:</b>(1) 加法合成与稠密数据不匹配,同基元数约 10–13 dB;(2) 基元跨帧共享的约束,单帧约 4 dB,主要不在 MLP;(3) 容量与预算。“每时刻有用孩子数”与 PSNR 在 37 组运行上几乎无关(R² = 0.09),训练量在块 128³ 后已与逐帧 ESVR 持平。<b>未做:</b>独占 GPU 的训练时间、SZ3 / TTHRESH 在同数据上的对照、fp16 以下的量化、jet_Y_OH 上的归一化。</div>
 </section>
 <section class="method"><div class="mh"><span class="letter">E</span><h2>实现与上游的对应与偏离(审计 2026-09-22)</h2></div>
 <div class="lineage">基元、核、监督来自 ESVR;锚点/特征/子椭球结构、线性运动、广义高斯时间门、7 组优化器、dynamic-aware 生长来自 4D-Scaffold-GS 官方代码。不是逐行等价移植;每一处偏离及其实测影响如下(详见 <code>docs/ESVR_SCAFFOLD4D.md</code>)</div>
