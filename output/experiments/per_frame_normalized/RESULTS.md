@@ -12,7 +12,7 @@ forward pass of each frame against the ground truth (float64 MSE).
 |---|---:|---:|---:|---:|---|
 | PN21 | 21,000 | **51.045** (49.72 / 52.65) | 90.7 MB | 45.4 MB | 67 s / frame, 1.7 h |
 | PN10 | 10,000 | **43.703** (42.14 / 45.18) | 43.2 MB | 21.6 MB | 55 s / frame, 1.4 h |
-| PN6 | 6,300 | queued | 27.2 MB | | |
+| PN6 | 6,300 | **38.514** (36.94 / 40.11) | 27.2 MB | 13.6 MB | 45 s / frame, 1.1 h |
 
 Comparisons over the same 90 frames:
 
@@ -22,6 +22,7 @@ Comparisons over the same 90 frames:
 | PN21 vs S5b (additive per-frame ceiling, 555.6 MB, 49.52) | as above, 6x smaller | +1.5 dB |
 | W2 (normalized Scaffold4D, 39.8 MB, 54.94) vs PN21 | 4D sharing across frames (and W2 has SSIM in its loss, 2,670 vs 3,000 passes per frame) | **+3.89 dB on average, better on 90 / 90 frames, at 44 % of the size** |
 | W2 (39.8 MB) vs PN10 (43.2 MB) | 4D sharing at equal size | **+11.24 dB, better on 90 / 90 frames** |
+| N4A (27.2 MB) vs PN6 (27.2 MB) | 4D sharing at equal size, same init / loss / optimiser | **+14.74 dB, better on 90 / 90 frames** |
 | N4A (normalized explicit 4D, 27.2 MB, 53.25) vs PN21 | 4D sharing only (same init family, loss, optimiser) | +2.2 dB at 30 % of the size |
 
 So both effects are real and they add: normalization is the large one
